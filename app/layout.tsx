@@ -1,14 +1,16 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
+import { ThemeProvider } from '@/components/theme-provider'
+import { InventoryProvider } from '@/lib/inventory-context'
 import './globals.css'
 
 const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: 'v0 App',
-  description: 'Created with v0',
+  title: 'AHIMP - Hospital Inventory Management',
+  description: 'Automated Hospital Inventory Management Platform - Track medicines, equipment, supplies, and blood bank inventory with real-time alerts and analytics.',
   generator: 'v0.app',
   icons: {
     icon: [
@@ -29,15 +31,31 @@ export const metadata: Metadata = {
   },
 }
 
+export const viewport: Viewport = {
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#0d9488' },
+    { media: '(prefers-color-scheme: dark)', color: '#14b8a6' },
+  ],
+}
+
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
-      <body className={`font-sans antialiased`}>
-        {children}
+    <html lang="en" suppressHydrationWarning>
+      <body className="font-sans antialiased">
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="light"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <InventoryProvider>
+            {children}
+          </InventoryProvider>
+        </ThemeProvider>
         <Analytics />
       </body>
     </html>
