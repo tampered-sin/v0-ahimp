@@ -1,5 +1,7 @@
 "use client"
 
+import { useEffect, useState } from "react"
+import Link from "next/link"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { StatsCard } from "@/components/stats-card"
 import { StockStatusBadge, SeverityBadge } from "@/components/stock-status-badge"
@@ -15,6 +17,8 @@ import {
   DollarSign,
   ClipboardList,
   TrendingDown,
+  BrainCircuit,
+  ArrowRight,
 } from "lucide-react"
 import {
   BarChart,
@@ -30,6 +34,7 @@ import {
   LineChart,
   Line,
 } from "recharts"
+import { getStockoutRisk, getExpiryRisk, type StockoutRiskResponse, type ExpiryRiskResponse } from "@/lib/ml-api"
 
 export default function DashboardPage() {
   return (
@@ -42,6 +47,15 @@ export default function DashboardPage() {
 function DashboardContent() {
   const { state, getLowStockItems, getExpiringItems, getUnacknowledgedAlerts } = useInventory()
   const { items, purchaseOrders, activityLogs, alerts } = state
+
+  // AI Insight state
+  const [stockoutData, setStockoutData] = useState<StockoutRiskResponse | null>(null)
+  const [expiryData,   setExpiryData]   = useState<ExpiryRiskResponse   | null>(null)
+
+  useEffect(() => {
+    getStockoutRisk().then(d => d && setStockoutData(d))
+    getExpiryRisk().then(d => d && setExpiryData(d))
+  }, [])
 
   const totalItems = items.length
   const totalValue = items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0)
@@ -85,6 +99,61 @@ function DashboardContent() {
 
   return (
     <div className="flex flex-col gap-6">
+      {/* AI Insight Strip – only visible when backend is online */}
+      {(stockoutData || expiryData) && (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <Link href="/ai-predictions" className="group">
+            <Card className="border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors cursor-pointer">
+              <CardContent className="flex items-center gap-3 p-3">
+                <div className="flex size-9 items-center justify-center rounded-lg bg-primary/20 text-primary shrink-0">
+                  <BrainCircuit className="size-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] text-muted-foreground">AI · Stockout Risk</p>
+                  <p className="text-sm font-bold text-primary">
+                    {stockoutData?.items.filter(i => i.risk_flag).length ?? "–"} items at risk
+                  </p>
+                </div>
+                <ArrowRight className="size-3.5 text-primary shrink-0 group-hover:translate-x-0.5 transition-transform" />
+              </CardContent>
+            </Card>
+          </Link>
+          <Link href="/ai-predictions?tab=expiry" className="group">
+            <Card className="border-amber-500/30 bg-amber-500/5 hover:bg-amber-500/10 transition-colors cursor-pointer">
+              <CardContent className="flex items-center gap-3 p-3">
+                <div className="flex size-9 items-center justify-center rounded-lg bg-amber-500/20 text-amber-600 shrink-0">
+                  <Clock className="size-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] text-muted-foreground">AI · Expiry Risk</p>
+                  <p className="text-sm font-bold text-amber-600">
+                    {expiryData?.items.filter(i => i.high_risk).length ?? "–"} high risk batches
+                  </p>
+                </div>
+                <ArrowRight className="size-3.5 text-amber-600 shrink-0 group-hover:translate-x-0.5 transition-transform" />
+              </CardContent>
+            </Card>
+          </Link>
+          <Link href="/ai-predictions" className="group">
+            <Card className="border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10 transition-colors cursor-pointer">
+              <CardContent className="flex items-center gap-3 p-3">
+                <div className="flex size-9 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-600 shrink-0">
+                  <TrendingDown className="size-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] text-muted-foreground">AI · Model Accuracy</p>
+                  <p className="text-sm font-bold text-emerald-600">
+                    {stockoutData?.metrics.accuracy != null
+                      ? `${(stockoutData.metrics.accuracy * 100).toFixed(0)}% F1 score`
+                      : "Models ready"}
+                  </p>
+                </div>
+                <ArrowRight className="size-3.5 text-emerald-600 shrink-0 group-hover:translate-x-0.5 transition-transform" />
+              </CardContent>
+            </Card>
+          </Link>
+        </div>
+      )}
       {/* KPI Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <StatsCard
