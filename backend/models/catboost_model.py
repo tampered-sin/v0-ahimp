@@ -21,7 +21,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import cross_val_score, KFold
+from sklearn.model_selection import KFold
 from catboost import CatBoostRegressor
 
 
@@ -37,6 +37,46 @@ class CatBoostConfig:
     bagging_temperature: float = 1.0
     nan_mode: str = "Min"  # How to handle NaN values
     grow_policy: str = "SymmetricTree"  # Symmetric tree growth for stability
+
+
+def _to_dataframe(X: np.ndarray | pd.DataFrame) -> pd.DataFrame:
+    """Normalize input to a DataFrame so CatBoost can handle mixed dtypes."""
+    if isinstance(X, pd.DataFrame):
+        return X.copy()
+    return pd.DataFrame(np.asarray(X).copy())
+
+
+def _resolve_column(df: pd.DataFrame, feature: int | str):
+    """Resolve feature identifier (index or name) to a concrete DataFrame column."""
+    if isinstance(feature, int):
+        return df.columns[feature]
+    return feature
+
+
+def prepare_catboost_input(
+    X: np.ndarray | pd.DataFrame,
+    cat_features: list[int | str] | None,
+) -> pd.DataFrame:
+    """
+    Prepare input data for CatBoost with categorical columns coerced appropriately.
+
+    CatBoost disallows floating-point numpy arrays when cat_features are provided,
+    so we always use a DataFrame and cast categorical columns to category dtype.
+    """
+    df = _to_dataframe(X)
+    if not cat_features:
+        return df
+
+    for feature in cat_features:
+        col = _resolve_column(df, feature)
+        series = df[col]
+        if pd.api.types.is_numeric_dtype(series):
+            series = pd.to_numeric(series, errors="coerce").fillna(-1).astype(np.int64)
+        else:
+            series = series.astype(str).fillna("unknown")
+        df[col] = series.astype("category")
+
+    return df
 
 
 def build_model(random_seed: int, cfg: CatBoostConfig | None = None) -> CatBoostRegressor:
@@ -88,13 +128,20 @@ def cross_validate_r2(
     Returns:
         List of R² scores for each fold
     """
-    model = build_model(random_seed)
     kf = KFold(n_splits=folds, shuffle=False)
 
     scores = []
     for train_idx, val_idx in kf.split(X):
-        X_train, X_val = X[train_idx], X[val_idx]
-        y_train, y_val = y[train_idx], y[val_idx]
+        model = build_model(random_seed)
+
+        if isinstance(X, pd.DataFrame):
+            X_train_raw, X_val_raw = X.iloc[train_idx], X.iloc[val_idx]
+        else:
+            X_train_raw, X_val_raw = X[train_idx], X[val_idx]
+
+        X_train = prepare_catboost_input(X_train_raw, cat_features)
+        X_val = prepare_catboost_input(X_val_raw, cat_features)
+        y_train, y_val = np.asarray(y)[train_idx], np.asarray(y)[val_idx]
 
         model.fit(
             X_train,
@@ -104,11 +151,58 @@ def cross_validate_r2(
             early_stopping_rounds=50,
             verbose=False,
         )
-        
+
         score = model.score(X_val, y_val)
         scores.append(score)
 
     return scores
+
+
+def get_shap_importance(
+    model: CatBoostRegressor,
+    X: np.ndarray | pd.DataFrame,
+    feature_names: list[str],
+    cat_feature_names: list[str],
+    max_samples: int = 500,
+) -> list[dict]:
+    """
+    Compute SHAP-based global feature importance for CatBoost.
+
+    Returns an empty list when SHAP is unavailable or SHAP computation fails.
+    """
+    try:
+        import shap
+    except Exception:
+        return []
+
+    cat_indices = [idx for idx, name in enumerate(feature_names) if name in cat_feature_names]
+    X_df = prepare_catboost_input(X, cat_indices)
+
+    if len(X_df) > max_samples:
+        X_df = X_df.sample(n=max_samples, random_state=42)
+
+    try:
+        explainer = shap.TreeExplainer(model)
+        shap_values = explainer.shap_values(X_df)
+        values = np.asarray(shap_values)
+        if values.ndim == 3:
+            values = values[0]
+        mean_abs = np.abs(values).mean(axis=0)
+
+        importance = []
+        for idx, name in enumerate(feature_names):
+            importance.append(
+                {
+                    "feature": name,
+                    "mean_abs_shap": float(mean_abs[idx]),
+                    "is_categorical": name in cat_feature_names,
+                }
+            )
+
+        importance.sort(key=lambda x: x["mean_abs_shap"], reverse=True)
+        return importance
+    except Exception:
+        return []
 
 
 def save_model(model: CatBoostRegressor, path: Path) -> None:

@@ -86,13 +86,14 @@ Implement CatBoost model to handle categorical features (supplier_id, department
 - [x] Performance benchmarking script created
 - [x] MAE validation (<7.0, ACHIEVED: 1.74)
 - [x] Inference time (<50ms, ACHIEVED: 0.60ms)
+- [x] SHAP integration for model interpretability
 
 **Tasks:**
 1. [x] Install CatBoost: `pip install catboost==1.2.0`
 2. [x] Create `backend/models/catboost_model.py`
 3. [x] Define categorical feature indices
 4. [x] Implement training with early stopping
-5. [x] Add feature importance with categorical insights
+5. [x] Add feature importance + SHAP insights
 6. [x] Benchmark performance (backend/benchmark_catboost.py)
 7. [x] Validate all acceptance criteria
 8. [x] Document categorical handling in code

@@ -21,6 +21,8 @@ from models.catboost_model import (
     load_model as load_catboost_model,
     save_model as save_catboost_model,
     get_feature_importance,
+    get_shap_importance,
+    prepare_catboost_input,
 )
 from models.lightgbm_model import (
     build_model as build_lgbm_model,
@@ -112,14 +114,19 @@ def train_catboost(feat_df: pd.DataFrame) -> dict:
     )
 
     # --- CatBoost Training ---
+    X_train_cb = prepare_catboost_input(X_train, cat_indices)
+    X_test_cb = prepare_catboost_input(X_test, cat_indices)
+
     catboost = build_catboost_model(RANDOM_SEED)
     catboost.fit(
-        X_train,
+        X_train_cb,
         y_train,
         cat_features=cat_indices,
+        eval_set=[(X_test_cb, y_test)],
+        early_stopping_rounds=50,
         verbose=False,
     )
-    y_pred_catboost = catboost.predict(X_test)
+    y_pred_catboost = catboost.predict(X_test_cb)
 
     mae_catboost = float(mean_absolute_error(y_test, y_pred_catboost))
     rmse_catboost = float(np.sqrt(mean_squared_error(y_test, y_pred_catboost)))
@@ -133,11 +140,20 @@ def train_catboost(feat_df: pd.DataFrame) -> dict:
 
     # Feature importance with categorical insights
     importance = get_feature_importance(catboost, feature_names, CATEGORICAL_FEATURE_NAMES)
+    shap_importance = get_shap_importance(
+        catboost,
+        X_train_cb,
+        feature_names,
+        CATEGORICAL_FEATURE_NAMES,
+        max_samples=500,
+    )
 
     # Compare with LightGBM baseline
+    X_train_num = np.asarray(X_train, dtype=float)
+    X_test_num = np.asarray(X_test, dtype=float)
     lgbm = build_lgbm_model(RANDOM_SEED)
-    lgbm.fit(X_train, y_train)
-    y_pred_lgbm = lgbm.predict(X_test)
+    lgbm.fit(X_train_num, y_train)
+    y_pred_lgbm = lgbm.predict(X_test_num)
     r2_lgbm = float(r2_score(y_test, y_pred_lgbm))
 
     meta = {
@@ -158,6 +174,7 @@ def train_catboost(feat_df: pd.DataFrame) -> dict:
             "mae_vs_baseline": mae_catboost,
         },
         "feature_importance": importance,
+        "shap_importance": shap_importance,
         "feature_cols": FEATURE_COLS,
         "categorical_cols": CATEGORICAL_FEATURE_NAMES,
     }
