@@ -276,7 +276,7 @@ Combine XGBoost, LightGBM, LSTM, and Linear Regression predictions using weighte
 ## TICKET: TASK-106
 **Title:** Implement Hyperparameter Tuning with Optuna
 **Type:** Task
-**Status:** Not Started
+**Status:** In Progress
 **Priority:** MEDIUM
 **Story Points:** 13
 **Sprint:** Sprint 2
@@ -287,35 +287,41 @@ Combine XGBoost, LightGBM, LSTM, and Linear Regression predictions using weighte
 Use Optuna to automatically find optimal hyperparameters for LightGBM, CatBoost, and LSTM models. Reduce manual tuning and improve model performance by 2-5%.
 
 **Acceptance Criteria:**
-- [ ] Optuna 3.0+ installed
-- [ ] `backend/models/hyperparameter_tuning.py` created
-- [ ] Trial objectives:
-  - [ ] LightGBM: maximize R² on validation set
-  - [ ] CatBoost: maximize R² on validation set
-  - [ ] LSTM: minimize MAE on test set
-- [ ] Search space defined:
-  - [ ] n_estimators: 100-500
-  - [ ] max_depth: 3-10
-  - [ ] learning_rate: 0.01-0.3
-  - [ ] subsample: 0.5-1.0
+- [x] Optuna 3.0+ installed
+- [x] `backend/models/hyperparameter_tuning.py` created
+- [x] Trial objectives:
+  - [x] LightGBM: maximize R² on validation set
+  - [x] CatBoost: maximize R² on validation set
+  - [x] LSTM: minimize MAE on test set
+- [x] Search space defined:
+  - [x] n_estimators: 100-500
+  - [x] max_depth: 3-10
+  - [x] learning_rate: 0.01-0.3
+  - [x] subsample: 0.5-1.0
 - [ ] Minimum 100 trials per model
 - [ ] Results logged to database
-- [ ] Top 3 parameter sets recorded
+- [x] Top 3 parameter sets recorded
 - [ ] Performance improvement: +2-5%
 
 **Tasks:**
-1. Install Optuna: `pip install optuna==3.0.0`
-2. Create `backend/models/hyperparameter_tuning.py`
-3. Define objective functions for each model
+1. [x] Install Optuna: `pip install optuna==3.6.1`
+2. [x] Create `backend/models/hyperparameter_tuning.py`
+3. [x] Define objective functions for each model
 4. Set up Optuna study with:
-   - [ ] Sampler: TPESampler
-   - [ ] Pruner: SuccessiveHalvingPruner
+  - [x] Sampler: TPESampler
+  - [x] Pruner: SuccessiveHalvingPruner
    - [ ] 100 trials minimum
 5. Run optimization (may take 4-6 hours)
-6. Log best params to `backend/models/best_params.json`
+6. [x] Log best params to `backend/models/best_params.json`
 7. Compare with manual params
 8. Document trials and results
 9. Create optimization report
+
+**Current Progress Notes:**
+- Added Optuna tuning module covering LightGBM, CatBoost, and LSTM objective functions
+- Added reusable study builder with TPESampler + SuccessiveHalvingPruner
+- Added JSON persistence for best params and top-3 trial metadata
+- Added unit tests for tuning objectives and persistence helpers
 
 **Dependencies:**
 - TASK-101, TASK-102, TASK-103
