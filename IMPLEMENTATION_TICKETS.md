@@ -7,6 +7,8 @@
 **Timeline:** Week 1-2
 **Assignee:** ML Engineering Team
 
+**Epic Branching Policy:** Work on branch `epic/EPIC-1-ml-enhancements` and push only after all EPIC-1 tasks are completed.
+
 ---
 
 ## TICKET: TASK-101
@@ -398,10 +400,14 @@ Implement SHAP values and LIME for model explainability, enabling pharmacists/do
 **Timeline:** Week 3
 **Assignee:** AI/Backend Team
 
+**Epic Branching Policy:** Work on branch `epic/EPIC-2-data-ingestion-agent` and push only after all EPIC-2 tasks are completed.
+
+**Agent LLM Standard:** CrewAI agents in this epic must use local Ollama (`ollama/llama3`) for reasoning.
+
 ---
 
 ## TICKET: TASK-201
-**Title:** Set Up CrewAI Framework & LLM Integration
+**Title:** Set Up CrewAI Framework & Local Ollama3 Integration
 **Type:** Task
 **Status:** Not Started
 **Priority:** HIGH
@@ -411,16 +417,18 @@ Implement SHAP values and LIME for model explainability, enabling pharmacists/do
 **Due Date:** Week 3, Day 1
 
 **Description:**
-Initialize CrewAI framework and configure OpenAI GPT-4 integration for AI agent orchestration.
+Initialize CrewAI framework and configure local Ollama3 integration for AI agent orchestration.
 
 **Acceptance Criteria:**
 - [ ] CrewAI 0.3+ installed
 - [ ] LangChain 0.1+ installed
 - [ ] `backend/agents/__init__.py` created
 - [ ] `backend/agents/config.py` created with:
-  - [ ] OpenAI API key configuration
-  - [ ] LLM model selection (gpt-4-turbo)
+  - [ ] Ollama base URL configuration (`http://localhost:11434`)
+  - [ ] LLM model selection (`ollama/llama3`)
   - [ ] Temperature & other params
+- [ ] Ollama connectivity check implemented (`ollama list`/health check)
+- [ ] `llama3` model pulled locally and documented
 - [ ] Agent base class created
 - [ ] Tool registry system implemented
 - [ ] Logging configured for agent execution
@@ -429,27 +437,30 @@ Initialize CrewAI framework and configure OpenAI GPT-4 integration for AI agent 
 **Tasks:**
 1. Install CrewAI: `pip install crewai==0.3.0`
 2. Install LangChain: `pip install langchain==0.1.0`
-3. Create `backend/agents/__init__.py`
-4. Create `backend/agents/config.py`
-5. Add OpenAI API credentials to `.env`
-6. Create base `Agent` class
-7. Create `Task` runner
-8. Create `Crew` orchestrator
-9. Add logging/monitoring
-10. Write integration tests
+3. Install/start Ollama locally and verify daemon on `http://localhost:11434`
+4. Pull model: `ollama pull llama3`
+5. Create `backend/agents/__init__.py`
+6. Create `backend/agents/config.py`
+7. Add local Ollama configuration to `.env`
+8. Create base `Agent` class
+9. Create `Task` runner
+10. Create `Crew` orchestrator
+11. Add logging/monitoring
+12. Write integration tests
 
 **Dependencies:**
 - None
 
 **Environment Setup:**
 ```bash
-OPENAI_API_KEY=YOUR_API_KEY_HERE
-GPT_MODEL=gpt-4-turbo
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=ollama/llama3
+CREW_LLM_PROVIDER=ollama
 CREW_LOG_LEVEL=INFO
 ```
 
 **Cost Estimate:**
-- ~$1-2/day in API calls (based on usage)
+- Local inference (no per-call API cost; hardware/energy cost only)
 
 ---
 
@@ -464,10 +475,11 @@ CREW_LOG_LEVEL=INFO
 **Due Date:** Week 3, Day 3
 
 **Description:**
-Create AI agent to autonomously ingest consumption records from CSV files and APIs, validate data quality, and feed ML pipeline.
+Create AI agent to autonomously ingest consumption records from CSV files and APIs, validate data quality, and feed ML pipeline using local Ollama3 reasoning through CrewAI.
 
 **Acceptance Criteria:**
 - [ ] `backend/agents/data_ingestion_agent.py` created
+- [ ] Agent LLM configured as `LLM(model="ollama/llama3", base_url="http://localhost:11434")`
 - [ ] Agent capabilities:
   - [ ] Read CSV files from `/data/uploads/`
   - [ ] Parse API responses (JSON/XML)
@@ -491,19 +503,20 @@ Create AI agent to autonomously ingest consumption records from CSV files and AP
 **Tasks:**
 1. Create `backend/agents/data_ingestion_agent.py`
 2. Define agent role, goal, backstory
-3. Create tools:
+3. Configure CrewAI LLM to local Ollama3 (`ollama/llama3`)
+4. Create tools:
    - [ ] `read_csv_tool`
    - [ ] `parse_api_tool`
    - [ ] `validate_data_tool`
    - [ ] `detect_anomalies_tool`
    - [ ] `ingest_database_tool`
-4. Implement validation rules
-5. Create error recovery logic
-6. Add progress tracking
-7. Create `/api/agents/data-ingestion` endpoint
-8. Add background task for async processing
-9. Write integration tests with sample data
-10. Document ingestion formats
+5. Implement validation rules
+6. Create error recovery logic
+7. Add progress tracking
+8. Create `/api/agents/data-ingestion` endpoint
+9. Add background task for async processing
+10. Write integration tests with sample data
+11. Document ingestion formats
 
 **Dependencies:**
 - TASK-201 (CrewAI setup)
@@ -565,6 +578,10 @@ Create robust validation rules and anomaly detection for data ingestion to ensur
 **Priority:** HIGH
 **Timeline:** Week 4
 **Assignee:** Supply Chain / AI Team
+
+**Epic Branching Policy:** Work on branch `epic/EPIC-3-supply-chain-agent` and push only after all EPIC-3 tasks are completed.
+
+**Agent LLM Standard:** CrewAI agents in this epic must use local Ollama (`ollama/llama3`) for reasoning.
 
 ---
 
@@ -678,10 +695,11 @@ Integrate sentiment analysis (NLP) to analyze supplier reviews and feedback, con
 **Due Date:** Week 4, Day 5
 
 **Description:**
-Create AI agent to autonomously monitor stockout risk, select best suppliers, create purchase orders, and manage procurement workflow.
+Create AI agent to autonomously monitor stockout risk, select best suppliers, create purchase orders, and manage procurement workflow using local Ollama3 reasoning.
 
 **Acceptance Criteria:**
 - [ ] `backend/agents/supply_chain_agent.py` created
+- [ ] Agent LLM configured as `LLM(model="ollama/llama3", base_url="http://localhost:11434")`
 - [ ] Agent workflow:
   - [ ] Check all items hourly for stockout risk > 70%
   - [ ] For each at-risk item:
@@ -702,20 +720,21 @@ Create AI agent to autonomously monitor stockout risk, select best suppliers, cr
 **Tasks:**
 1. Create `backend/agents/supply_chain_agent.py`
 2. Define agent role, goal, backstory
-3. Create tools:
+3. Configure CrewAI LLM to local Ollama3 (`ollama/llama3`)
+4. Create tools:
    - [ ] `check_stockout_risk_tool`
    - [ ] `score_suppliers_tool`
    - [ ] `calculate_order_qty_tool`
    - [ ] `create_po_tool`
    - [ ] `send_to_supplier_tool`
    - [ ] `track_delivery_tool`
-4. Implement stockout monitoring loop
-5. Add supplier selection logic
-6. Implement PO generation
-7. Add EDI/Email sender integration
-8. Create approval workflow
-9. Add logging and audit trail
-10. Write integration tests
+5. Implement stockout monitoring loop
+6. Add supplier selection logic
+7. Implement PO generation
+8. Add EDI/Email sender integration
+9. Create approval workflow
+10. Add logging and audit trail
+11. Write integration tests
 
 **Dependencies:**
 - TASK-301 (Supplier scoring)
@@ -847,6 +866,8 @@ Implement delivery tracking to monitor PO status, detect delays, and alert procu
 **Priority:** HIGH
 **Timeline:** Week 5
 **Assignee:** Backend & Frontend Team
+
+**Epic Branching Policy:** Work on branch `epic/EPIC-4-api-dashboard` and push only after all EPIC-4 tasks are completed.
 
 ---
 
