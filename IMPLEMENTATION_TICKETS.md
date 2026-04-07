@@ -179,7 +179,7 @@ Build LSTM/GRU neural network to capture temporal patterns, seasonal cycles, and
 ## TICKET: TASK-104
 **Title:** Add Anomaly Detection with Isolation Forest
 **Type:** Task
-**Status:** Not Started
+**Status:** In Progress
 **Priority:** MEDIUM
 **Story Points:** 5
 **Sprint:** Sprint 1
@@ -190,27 +190,27 @@ Build LSTM/GRU neural network to capture temporal patterns, seasonal cycles, and
 Implement Isolation Forest to detect data entry errors, equipment malfunctions, and unusual consumption patterns that could skew ML models.
 
 **Acceptance Criteria:**
-- [ ] `backend/models/anomaly_detector.py` created
-- [ ] Detector trained on historical consumption data
-- [ ] Contamination parameter: 5% (95th percentile as normal)
+- [x] `backend/models/anomaly_detector.py` created
+- [x] Detector trained on historical consumption data
+- [x] Contamination parameter: 5% (95th percentile as normal)
 - [ ] Detects >3σ deviations:
-  - [ ] Sudden 10x consumption spike
-  - [ ] Zero consumption when baseline high
-  - [ ] Department-specific anomalies
+  - [x] Sudden 10x consumption spike
+  - [x] Zero consumption when baseline high
+  - [x] Department-specific anomalies
 - [ ] Integration with data ingestion pipeline
-- [ ] Alert API endpoint: `/api/anomalies/recent`
+- [x] Alert API endpoint: `/api/anomalies/recent`
 - [ ] Pharmacist dashboard notification (email/SMS)
-- [ ] Unit tests for known anomalies
+- [x] Unit tests for known anomalies
 
 **Tasks:**
 1. Install IForest (included in scikit-learn)
-2. Create `backend/models/anomaly_detector.py`
-3. Implement `train()` on consumption data
-4. Add `detect()` function
-5. Create alerting logic
+2. Create `backend/models/anomaly_detector.py` ✅
+3. Implement `train()` on consumption data ✅
+4. Add `detect()` function ✅
+5. Create alerting logic ✅
 6. Add to `/api/consumption/ingest` workflow
-7. Create test cases with synthetic anomalies
-8. Document business logic
+7. Create test cases with synthetic anomalies ✅
+8. Document business logic (in progress)
 
 **Dependencies:**
 - None
@@ -223,7 +223,7 @@ Implement Isolation Forest to detect data entry errors, equipment malfunctions, 
 ## TICKET: TASK-105
 **Title:** Build Ensemble Model with Voting Predictor
 **Type:** Task
-**Status:** Not Started
+**Status:** In Progress
 **Priority:** HIGH
 **Story Points:** 8
 **Sprint:** Sprint 2
@@ -234,7 +234,7 @@ Implement Isolation Forest to detect data entry errors, equipment malfunctions, 
 Combine XGBoost, LightGBM, LSTM, and Linear Regression predictions using weighted voting to achieve 97%+ R² accuracy.
 
 **Acceptance Criteria:**
-- [ ] `backend/models/ensemble_model.py` created
+- [x] `backend/models/ensemble_model.py` created
 - [ ] Voting weights tuned via cross-validation:
   - [ ] XGBoost: 0.4
   - [ ] LightGBM: 0.3
@@ -246,15 +246,15 @@ Combine XGBoost, LightGBM, LSTM, and Linear Regression predictions using weighte
 - [ ] Fallback to best single model if any fails
 
 **Tasks:**
-1. Create `backend/models/ensemble_model.py`
-2. Implement `VotingPredictor` class
+1. Create `backend/models/ensemble_model.py` ✅
+2. Implement `VotingPredictor` class ✅
 3. Load individual models
-4. Implement weighted voting logic
-5. Add confidence scoring (std dev of predictions)
+4. Implement weighted voting logic ✅
+5. Add confidence scoring (std dev of predictions) ✅
 6. Tune weights via Optuna (TASK-106)
 7. Create `/api/ensemble-forecast` endpoint
 8. Add comparison dashboard
-9. Unit tests
+9. Unit tests ✅ (starter)
 
 **Dependencies:**
 - TASK-101 (LightGBM)
