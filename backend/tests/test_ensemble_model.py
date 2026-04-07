@@ -7,7 +7,11 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from models.ensemble_model import VotingPredictor
+from models.ensemble_model import (
+    VotingPredictor,
+    select_best_single_model,
+    tune_weights_via_grid,
+)
 
 
 def test_weighted_combine_uses_available_models():
@@ -32,3 +36,28 @@ def test_confidence_shape_matches_predictions():
     conf = vp.confidence(preds)
     assert conf.shape == (3,)
     assert np.all(conf > 0)
+
+
+def test_tune_weights_grid_sums_to_one():
+    preds = {
+        "lgbm": np.array([10.0, 11.0, 12.0]),
+        "lr": np.array([9.0, 10.0, 11.0]),
+    }
+    target = np.array([10.0, 11.0, 12.0])
+    tuned = tune_weights_via_grid(preds, target, step=0.1)
+
+    assert set(tuned.keys()) == {"lgbm", "lr"}
+    assert abs(sum(tuned.values()) - 1.0) < 1e-8
+    assert tuned["lgbm"] >= tuned["lr"]
+
+
+def test_select_best_single_model_uses_target_error():
+    preds = {
+        "lgbm": np.array([20.0, 20.0]),
+        "lr": np.array([10.0, 10.0]),
+    }
+    target = np.array([10.0, 10.0])
+    model, arr = select_best_single_model(preds, target)
+
+    assert model == "lr"
+    np.testing.assert_allclose(arr, preds["lr"])

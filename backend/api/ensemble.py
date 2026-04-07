@@ -1,5 +1,6 @@
 """FastAPI route: GET /api/ensemble-forecast?item_id=<int>"""
 import importlib
+import time
 
 import numpy as np
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -8,7 +9,7 @@ from sqlalchemy.orm import Session
 from data.feature_engineering import build_demand_features, load_consumption_df
 from database.db import get_db
 from models import demand_model
-from models.ensemble_model import VotingPredictor
+from models.ensemble_model import VotingPredictor, select_best_single_model, tune_weights_via_grid
 
 router = APIRouter()
 
@@ -50,7 +51,6 @@ def ensemble_forecast(
     lgbm_series = _extract_series(lgbm_pred)
     if lgbm_series is not None:
         model_outputs["lgbm"] = lgbm_series
-        model_outputs["xgb"] = lgbm_series  # Backward-compat alias for weight map
         model_details["lgbm"] = {"model": "LightGBM", "metrics": lgbm_pred.get("metrics", {})}
 
     # Linear regression baseline forecast
@@ -69,6 +69,13 @@ def ensemble_forecast(
             if lstm_series is not None:
                 model_outputs["lstm"] = lstm_series
                 model_details["lstm"] = {"model": "LSTM", "metrics": lstm_pred.get("metrics", {})}
+
+        if getattr(lstm_module, "is_trained")(model_type="gru"):
+            gru_pred = getattr(lstm_module, "predict_forecast")(feat_df, item_id, model_type="gru")
+            gru_series = _extract_series(gru_pred)
+            if gru_series is not None:
+                model_outputs["gru"] = gru_series
+                model_details["gru"] = {"model": "GRU", "metrics": gru_pred.get("metrics", {})}
     except Exception:
         pass
 
@@ -90,9 +97,34 @@ def ensemble_forecast(
     if not model_outputs:
         raise HTTPException(503, "No model forecasts available for ensemble")
 
-    voter = VotingPredictor()
-    ensemble_values = voter.combine(model_outputs)
-    confidence = voter.confidence(model_outputs)
+    # Tune voting weights against most recent observed horizon when possible.
+    tuned_weights = None
+    try:
+        item_history = (
+            feat_df[feat_df["item_id"] == item_id]
+            .sort_values("usage_date")
+            .tail(len(next(iter(model_outputs.values()))))
+        )
+        y_recent = item_history["quantity_used"].to_numpy(dtype=float)
+        if len(y_recent) == len(next(iter(model_outputs.values()))):
+            tuned_weights = tune_weights_via_grid(model_outputs, y_recent, step=0.1)
+    except Exception:
+        tuned_weights = None
+
+    if tuned_weights:
+        voter = VotingPredictor(custom_weights=tuned_weights)
+    else:
+        voter = VotingPredictor()
+
+    inference_start = time.perf_counter()
+    fallback_model = None
+    try:
+        ensemble_values = voter.combine(model_outputs)
+        confidence = voter.confidence(model_outputs)
+    except Exception:
+        fallback_model, ensemble_values = select_best_single_model(model_outputs)
+        confidence = np.ones_like(ensemble_values, dtype=float)
+    inference_ms = (time.perf_counter() - inference_start) * 1000.0
 
     start_date = np.datetime64("today", "D")
     forecast = []
@@ -113,5 +145,13 @@ def ensemble_forecast(
         "item_id": item_id,
         "models_used": sorted(model_outputs.keys()),
         "model_details": model_details,
+        "fallback_model": fallback_model,
+        "weights": tuned_weights or {
+            "xgb": 0.4,
+            "lgbm": 0.3,
+            "lstm": 0.2,
+            "lr": 0.1,
+        },
+        "inference_ms": round(inference_ms, 3),
         "forecast": forecast,
     }

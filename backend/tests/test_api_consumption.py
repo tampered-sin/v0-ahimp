@@ -68,7 +68,11 @@ def test_ingest_returns_alerts_and_notification(monkeypatch):
             ],
         },
     )
-    monkeypatch.setattr(consumption, "send_anomaly_alert", lambda subject, body: {"sent": True, "channel": "log"})
+    monkeypatch.setattr(
+        consumption,
+        "send_anomaly_alert",
+        lambda subject, body, severity="RED": {"sent": True, "channels": ["log"]},
+    )
 
     client = TestClient(app)
     payload = {

@@ -8,9 +8,11 @@ FastAPI service providing real ML-powered predictions for the AHIMP hospital inv
 | API Framework | FastAPI + Uvicorn |
 | Database | PostgreSQL 15 (Docker) / SQLite (dev) |
 | ORM | SQLAlchemy |
-| Demand Forecast | **XGBoost** + Linear Regression + ARIMA |
+| Demand Forecast | **LightGBM** + Linear Regression + ARIMA + LSTM/GRU |
+| Ensemble Forecast | Weighted voting with confidence + fallback |
 | Stockout Risk | **Random Forest** Classifier |
 | Expiry Risk | **Logistic Regression** |
+| Anomaly Detection | Isolation Forest + rule-based RED alerts |
 
 ## Quick Start with Docker (Recommended)
 
@@ -59,9 +61,13 @@ On first boot the server will automatically:
 |--------|----------|-------------|
 | GET | `/api/health` | Health check |
 | GET | `/api/demand-items` | List items for dropdown |
-| GET | `/api/demand-forecast?item_id=<n>` | 14-day XGBoost demand forecast |
+| GET | `/api/demand-forecast?item_id=<n>` | 14-day demand forecast |
+| GET | `/api/ensemble-forecast?item_id=<n>` | Weighted ensemble forecast + confidence |
 | GET | `/api/stockout-risk` | Random Forest stockout probability for all items |
 | GET | `/api/expiry-risk` | Logistic Regression expiry risk + ROC curve |
+| GET | `/api/anomalies/recent` | Recent anomaly detection alerts |
+| GET | `/api/alerts/recent` | Dashboard alert feed (email/SMS/log events) |
+| POST | `/api/consumption/ingest` | Ingest consumption records + anomaly scan |
 | GET | `/api/cost-savings` | Estimated savings from ML-driven decisions |
 | GET | `/api/model-overview` | All metrics + SHAP feature importance + pipeline |
 
@@ -82,10 +88,14 @@ backend/
 │   └── seed.py              ← Synthetic data generator
 │
 ├── data/
-│   └── feature_engineering.py  ← Rolling avg, lag, seasonality features
+│   ├── feature_engineering.py  ← Rolling avg, lag, seasonality features
+│   └── sequence_generator.py   ← Lookback/horizon sequence builder for LSTM/GRU
 │
 ├── models/
-│   ├── demand_model.py      ← XGBoost + LR + ARIMA
+│   ├── demand_model.py      ← LightGBM + LR + ARIMA
+│   ├── lstm_model.py        ← LSTM/GRU sequence model
+│   ├── anomaly_detector.py  ← Isolation Forest anomaly model
+│   ├── ensemble_model.py    ← Weighted voting + tuning helpers
 │   ├── stockout_model.py    ← Random Forest
 │   ├── expiry_model.py      ← Logistic Regression
 │   └── pkl/                 ← Saved .pkl model files (auto-created)
@@ -94,6 +104,10 @@ backend/
     ├── demand.py
     ├── stockout.py
     ├── expiry.py
+    ├── anomalies.py
+    ├── consumption.py
+    ├── ensemble.py
+    ├── alerts.py
     ├── cost_savings.py
     └── overview.py
 ```

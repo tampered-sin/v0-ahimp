@@ -90,7 +90,7 @@ def ingest_consumption(payload: ConsumptionIngestRequest, db: Session = Depends(
                 f"Yellow alerts: {recent['yellow_alerts']}\n"
                 f"Sample anomalies: {recent['anomalies'][:5]}"
             )
-            result["notification"] = send_anomaly_alert(subject=subject, body=body)
+            result["notification"] = send_anomaly_alert(subject=subject, body=body, severity="RED")
         else:
             result["notification"] = {
                 "sent": False,
