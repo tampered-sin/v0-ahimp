@@ -23,10 +23,10 @@ def model_overview():
     shap_features = demand_meta.get("feature_importance", [])
 
     architecture = [
-        {"step": 1, "name": "Data Generation",      "desc": "Synthea-inspired synthetic consumption records (~2 yrs)", "icon": "Database"},
+        {"step": 1, "name": "Data Generation",      "desc": "Synthea-inspired synthetic consumption records (~20 yrs)", "icon": "Database"},
         {"step": 2, "name": "Preprocessing",         "desc": "Null handling, type casting, date parsing",               "icon": "Filter"},
         {"step": 3, "name": "Feature Engineering",   "desc": "Rolling avg, lag, seasonality, velocity, stock ratio",    "icon": "Wrench"},
-        {"step": 4, "name": "Demand Forecast",        "desc": "XGBoost Regressor – 14-day item demand prediction",       "icon": "TrendingUp"},
+        {"step": 4, "name": "Demand Forecast",        "desc": "LightGBM Regressor – 14-day item demand prediction",      "icon": "TrendingUp"},
         {"step": 5, "name": "Stockout Risk",          "desc": "Random Forest Classifier – 7-day stockout probability",   "icon": "AlertTriangle"},
         {"step": 6, "name": "Expiry Risk",            "desc": "Logistic Regression – batch expiry probability",          "icon": "Clock"},
         {"step": 7, "name": "Cost Impact",            "desc": "Business savings simulation formula",                     "icon": "DollarSign"},
@@ -42,4 +42,21 @@ def model_overview():
         "expiry_metrics":        {"auc": expiry_meta.get("auc")},
         "feature_importance":    shap_features,
         "architecture":          architecture,
+    }
+
+
+@router.get("/model-comparison")
+def model_comparison():
+    if not PKL_DEMAND_META.exists():
+        raise HTTPException(503, "Demand model not trained yet.")
+
+    with open(PKL_DEMAND_META, "rb") as f:
+        demand_meta = pickle.load(f)
+
+    return {
+        "primary_model": demand_meta.get("primary_model", "LightGBM"),
+        "lgbm": demand_meta.get("lgbm", demand_meta.get("xgb", {})),
+        "lr": demand_meta.get("lr", {}),
+        "arima": demand_meta.get("arima", {}),
+        "feature_importance": demand_meta.get("feature_importance", []),
     }
