@@ -109,7 +109,7 @@ def train_catboost(feat_df: pd.DataFrame) -> dict:
     # Build features with categorical support
     X, y, cat_indices, feature_names = build_demand_features_with_categorical(feat_df)
 
-    # Handle categorical features by encoding (CatBoost requires integer encoding + object dtype)
+    # Handle categorical features by encoding (prepare_catboost_array handles dtype conversion)
     cat_encoding: dict = {}
     if cat_indices:
         for idx in cat_indices:
@@ -117,7 +117,7 @@ def train_catboost(feat_df: pd.DataFrame) -> dict:
             unique_vals = np.unique(X[:, idx])
             val_to_idx = {val: i for i, val in enumerate(unique_vals)}
             cat_encoding[col_name] = val_to_idx
-            X[:, idx] = np.array([val_to_idx[val] for val in X[:, idx]], dtype=object)
+            X[:, idx] = [val_to_idx[val] for val in X[:, idx]]
 
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=RANDOM_SEED, shuffle=False
@@ -234,10 +234,11 @@ def predict_forecast_catboost(feat_df: pd.DataFrame, item_id: int) -> dict:
     # Build static categorical feature values for this item (constant across forecast horizon)
     cat_values: list = []
     for col in trained_cat_cols:
-        raw_val = item_df[col].iloc[0] if col in item_df.columns else 0
+        raw_val = item_df[col].iloc[0] if col in item_df.columns else None
         encoding = cat_encoding.get(col, {})
-        # Map to the integer used during training; fall back to 0 for unseen values
-        cat_values.append(encoding.get(raw_val, 0))
+        # Map to the integer used during training; use len(encoding) as 'unknown' sentinel
+        # to avoid colliding with any valid training value index
+        cat_values.append(encoding.get(raw_val, len(encoding)))
 
     for day in range(FORECAST_HORIZON):
         arr = np.array(history)

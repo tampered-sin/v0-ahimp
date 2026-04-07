@@ -73,9 +73,16 @@ def benchmark_models():
             baseline_start = time.time()
             baseline_results = train_baseline_models(features_df)
             baseline_time = time.time() - baseline_start
-            baseline_r2 = baseline_results.get('xgb', {}).get('r2') or baseline_results.get('lgbm', {}).get('r2', 0.0)
-            baseline_mae = baseline_results.get('xgb', {}).get('mae') or baseline_results.get('lgbm', {}).get('mae')
-            print(f"  ✓ Baseline R²: {baseline_r2:.4f}")
+            # Determine which model key is present (xgb kept for backward compat, lgbm is primary)
+            if baseline_results.get('xgb', {}).get('r2') is not None:
+                baseline_model_name = "XGBoost (compat)"
+                baseline_r2 = baseline_results['xgb']['r2']
+                baseline_mae = baseline_results['xgb'].get('mae')
+            else:
+                baseline_model_name = "LightGBM"
+                baseline_r2 = baseline_results.get('lgbm', {}).get('r2', 0.0)
+                baseline_mae = baseline_results.get('lgbm', {}).get('mae')
+            print(f"  ✓ Baseline {baseline_model_name} R²: {baseline_r2:.4f}")
             if baseline_mae is not None:
                 print(f"  ✓ Baseline MAE: {baseline_mae:.4f}")
             print(f"  ✓ Baseline training time: {baseline_time:.2f}s\n")
@@ -83,6 +90,7 @@ def benchmark_models():
             print(f"  ⚠ Baseline training skipped: {e}\n")
             baseline_r2 = None
             baseline_time = None
+            baseline_model_name = "Unknown"
         
         # === CATBOOST CROSS-VALIDATION ===
         print("Step 3: CatBoost cross-validation (5-fold, with early stopping)...")
@@ -157,7 +165,7 @@ def benchmark_models():
             "data_loading_time_sec": round(load_time, 4),
             
             "baseline": {
-                "model": "LightGBM",
+                "model": baseline_model_name,
                 "training_r2": round(float(baseline_r2), 4) if baseline_r2 else None,
                 "training_time_sec": round(baseline_time, 4) if baseline_time else None,
             } if baseline_r2 else None,
