@@ -10,6 +10,7 @@ from data.feature_engineering import load_consumption_df
 from database.db import get_db
 from database.models import ConsumptionRecord
 from models import anomaly_detector
+from services.notifications import send_anomaly_alert
 
 router = APIRouter()
 
@@ -80,5 +81,21 @@ def ingest_consumption(payload: ConsumptionIngestRequest, db: Session = Depends(
             "yellow": recent["yellow_alerts"],
         }
         result["anomalies_sample"] = recent["anomalies"][:10]
+
+        if recent["red_alerts"] > 0:
+            subject = f"AHIMP RED anomaly alerts: {recent['red_alerts']}"
+            body = (
+                f"Inserted records: {len(rows)}\n"
+                f"Red alerts: {recent['red_alerts']}\n"
+                f"Yellow alerts: {recent['yellow_alerts']}\n"
+                f"Sample anomalies: {recent['anomalies'][:5]}"
+            )
+            result["notification"] = send_anomaly_alert(subject=subject, body=body)
+        else:
+            result["notification"] = {
+                "sent": False,
+                "channel": "none",
+                "reason": "no_red_alerts",
+            }
 
     return result
