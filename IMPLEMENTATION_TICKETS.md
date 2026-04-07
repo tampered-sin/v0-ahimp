@@ -276,7 +276,7 @@ Combine XGBoost, LightGBM, LSTM, and Linear Regression predictions using weighte
 ## TICKET: TASK-106
 **Title:** Implement Hyperparameter Tuning with Optuna
 **Type:** Task
-**Status:** In Progress
+**Status:** In Progress (optimization run complete; DB logging pending)
 **Priority:** MEDIUM
 **Story Points:** 13
 **Sprint:** Sprint 2
@@ -298,7 +298,7 @@ Use Optuna to automatically find optimal hyperparameters for LightGBM, CatBoost,
   - [x] max_depth: 3-10
   - [x] learning_rate: 0.01-0.3
   - [x] subsample: 0.5-1.0
-- [ ] Minimum 100 trials per model
+- [x] Minimum 100 trials per model
 - [ ] Results logged to database
 - [x] Top 3 parameter sets recorded
 - [ ] Performance improvement: +2-5%
@@ -310,18 +310,26 @@ Use Optuna to automatically find optimal hyperparameters for LightGBM, CatBoost,
 4. Set up Optuna study with:
   - [x] Sampler: TPESampler
   - [x] Pruner: SuccessiveHalvingPruner
-   - [ ] 100 trials minimum
-5. Run optimization (may take 4-6 hours)
+  - [x] 100 trials minimum
+5. [x] Run optimization (100 trials each for LightGBM, CatBoost, LSTM)
 6. [x] Log best params to `backend/models/best_params.json`
-7. Compare with manual params
-8. Document trials and results
-9. Create optimization report
+7. [x] Compare with manual params
+8. [x] Document trials and results
+9. [x] Create optimization report
 
 **Current Progress Notes:**
 - Added Optuna tuning module covering LightGBM, CatBoost, and LSTM objective functions
 - Added reusable study builder with TPESampler + SuccessiveHalvingPruner
 - Added JSON persistence for best params and top-3 trial metadata
 - Added unit tests for tuning objectives and persistence helpers
+- Completed full 100-trial tuning run on seeded SQLite dataset (`backend/ahimp_optuna.db`)
+- Generated artifacts:
+  - `backend/models/best_params.json`
+  - `backend/models/optimization_report.json`
+- Manual vs tuned results:
+  - LightGBM R²: 0.9127 → 0.9936 (+8.87%)
+  - CatBoost R²: 0.9839 → 0.9943 (+1.06%)
+  - LSTM MAE: 22.90 → 18.78 (-18.00%)
 
 **Dependencies:**
 - TASK-101, TASK-102, TASK-103
