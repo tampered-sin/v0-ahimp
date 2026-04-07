@@ -51,6 +51,7 @@ coverage.xml
 
 # ML artifacts
 backend/models/pkl/*.pkl
+backend/catboost_info/
 
 # Local runtime data
 ahimp.db
