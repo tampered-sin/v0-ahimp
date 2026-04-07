@@ -23,7 +23,7 @@ from data.feature_engineering import (
     build_expiry_features,
 )
 from models import demand_model, stockout_model, expiry_model, anomaly_detector
-from api import demand, stockout, expiry, cost_savings, overview, anomalies
+from api import demand, stockout, expiry, cost_savings, overview, anomalies, consumption, ensemble
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ahimp")
@@ -108,6 +108,8 @@ app.include_router(expiry.router,       prefix="/api", tags=["Expiry Risk"])
 app.include_router(cost_savings.router, prefix="/api", tags=["Cost Savings"])
 app.include_router(overview.router,     prefix="/api", tags=["Model Overview"])
 app.include_router(anomalies.router,    prefix="/api", tags=["Anomaly Detection"])
+app.include_router(consumption.router,  prefix="/api", tags=["Consumption Ingestion"])
+app.include_router(ensemble.router,     prefix="/api", tags=["Ensemble Forecast"])
 
 
 @app.get("/api/health", tags=["Health"])

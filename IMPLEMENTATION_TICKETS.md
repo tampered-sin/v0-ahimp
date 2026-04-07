@@ -197,7 +197,7 @@ Implement Isolation Forest to detect data entry errors, equipment malfunctions, 
   - [x] Sudden 10x consumption spike
   - [x] Zero consumption when baseline high
   - [x] Department-specific anomalies
-- [ ] Integration with data ingestion pipeline
+- [x] Integration with data ingestion pipeline
 - [x] Alert API endpoint: `/api/anomalies/recent`
 - [ ] Pharmacist dashboard notification (email/SMS)
 - [x] Unit tests for known anomalies
@@ -208,7 +208,7 @@ Implement Isolation Forest to detect data entry errors, equipment malfunctions, 
 3. Implement `train()` on consumption data ✅
 4. Add `detect()` function ✅
 5. Create alerting logic ✅
-6. Add to `/api/consumption/ingest` workflow
+6. Add to `/api/consumption/ingest` workflow ✅
 7. Create test cases with synthetic anomalies ✅
 8. Document business logic (in progress)
 
@@ -252,9 +252,13 @@ Combine XGBoost, LightGBM, LSTM, and Linear Regression predictions using weighte
 4. Implement weighted voting logic ✅
 5. Add confidence scoring (std dev of predictions) ✅
 6. Tune weights via Optuna (TASK-106)
-7. Create `/api/ensemble-forecast` endpoint
+7. Create `/api/ensemble-forecast` endpoint ✅
 8. Add comparison dashboard
 9. Unit tests ✅ (starter)
+
+**Current Progress Notes:**
+- Weighted ensemble endpoint implemented with graceful fallback to available models
+- Consumption ingestion endpoint now triggers anomaly detection and alert summary
 
 **Dependencies:**
 - TASK-101 (LightGBM)

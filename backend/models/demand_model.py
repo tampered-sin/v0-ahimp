@@ -138,6 +138,11 @@ def _load_lgbm():
     return load_lgbm_model(PKL_LGBM)
 
 
+def _load_lr() -> LinearRegression:
+    with open(PKL_LR, "rb") as f:
+        return pickle.load(f)
+
+
 def _load_meta() -> dict:
     with open(PKL_META, "rb") as f:
         return pickle.load(f)
@@ -145,6 +150,53 @@ def _load_meta() -> dict:
 
 def is_trained() -> bool:
     return PKL_LGBM.exists() and PKL_META.exists()
+
+
+def _iterative_forecast(
+    model,
+    item_df: pd.DataFrame,
+    horizon: int = FORECAST_HORIZON,
+) -> list[dict]:
+    """Run iterative horizon forecasting with rolling feature updates."""
+    history = list(item_df["quantity_used"].values)
+    forecast = []
+    today = pd.Timestamp.today().normalize()
+
+    for day in range(horizon):
+        arr = np.array(history)
+        r7 = arr[-7:].mean() if len(arr) >= 7 else arr.mean()
+        r30 = arr[-30:].mean() if len(arr) >= 30 else arr.mean()
+        l7 = arr[-7] if len(arr) >= 7 else arr[0]
+        l14 = arr[-14] if len(arr) >= 14 else arr[0]
+        vel = float(np.polyfit(range(min(14, len(arr))), arr[-min(14, len(arr)):], 1)[0])
+        target_dt = today + pd.Timedelta(days=day + 1)
+        stock_ratio = r7 / max(1, item_df["reorder_point"].iloc[0])
+        features = np.array(
+            [[
+                r7,
+                r30,
+                l7,
+                l14,
+                target_dt.dayofweek,
+                target_dt.month,
+                vel,
+                stock_ratio,
+                item_df["avg_lead_time_days"].iloc[0],
+                item_df["reliability_score"].iloc[0],
+            ]]
+        )
+        pred = float(max(0, model.predict(features)[0]))
+        forecast.append(
+            {
+                "date": target_dt.strftime("%Y-%m-%d"),
+                "predicted": round(pred, 1),
+                "lower": round(max(0, pred * 0.80), 1),
+                "upper": round(pred * 1.20, 1),
+            }
+        )
+        history.append(pred)
+
+    return forecast
 
 
 def predict_forecast(feat_df: pd.DataFrame, item_id: int) -> dict:
@@ -165,35 +217,7 @@ def predict_forecast(feat_df: pd.DataFrame, item_id: int) -> dict:
     if item_df.empty:
         return {"error": "No data for this item"}
 
-    # Seed forecast from last known state
-    history   = list(item_df["quantity_used"].values)
-    forecast  = []
-    today     = pd.Timestamp.today().normalize()
-
-    for day in range(FORECAST_HORIZON):
-        arr = np.array(history)
-        r7  = arr[-7:].mean()  if len(arr) >= 7  else arr.mean()
-        r30 = arr[-30:].mean() if len(arr) >= 30 else arr.mean()
-        l7  = arr[-7]          if len(arr) >= 7  else arr[0]
-        l14 = arr[-14]         if len(arr) >= 14 else arr[0]
-        vel = float(np.polyfit(range(min(14, len(arr))), arr[-min(14,len(arr)):], 1)[0])
-        target_dt  = today + pd.Timedelta(days=day + 1)
-        stock_ratio = r7 / max(1, item_df["reorder_point"].iloc[0])
-        features = np.array([[
-            r7, r30, l7, l14,
-            target_dt.dayofweek, target_dt.month,
-            vel, stock_ratio,
-            item_df["avg_lead_time_days"].iloc[0],
-            item_df["reliability_score"].iloc[0],
-        ]])
-        pred = float(max(0, lgbm.predict(features)[0]))
-        forecast.append({
-            "date": target_dt.strftime("%Y-%m-%d"),
-            "predicted": round(pred, 1),
-            "lower":     round(max(0, pred * 0.80), 1),
-            "upper":     round(pred * 1.20, 1),
-        })
-        history.append(pred)
+    forecast = _iterative_forecast(lgbm, item_df, horizon=FORECAST_HORIZON)
 
     return {
         "item_id":   item_id,
@@ -201,4 +225,30 @@ def predict_forecast(feat_df: pd.DataFrame, item_id: int) -> dict:
         "forecast":  forecast,
         "metrics":   meta,
         "feature_importance": meta["feature_importance"],
+    }
+
+
+def predict_forecast_lr(feat_df: pd.DataFrame, item_id: int) -> dict:
+    """Generate a 14-day demand forecast using the persisted Linear Regression model."""
+    if not PKL_LR.exists():
+        return {"error": "Linear Regression model not trained"}
+
+    lr = _load_lr()
+    meta = _load_meta()
+    item_df = (
+        feat_df[feat_df["item_id"] == item_id]
+        .sort_values("usage_date")
+        .tail(60)
+        .reset_index(drop=True)
+    )
+    if item_df.empty:
+        return {"error": "No data for this item"}
+
+    forecast = _iterative_forecast(lr, item_df, horizon=FORECAST_HORIZON)
+    return {
+        "item_id": item_id,
+        "item_name": item_df["item_name"].iloc[0] if "item_name" in item_df else str(item_id),
+        "forecast": forecast,
+        "metrics": meta.get("lr", {}),
+        "model": "LinearRegression",
     }
