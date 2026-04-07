@@ -1,236 +1,268 @@
-"""
-LSTM/GRU demand forecasting model.
-
-Architecture targets from TASK-103:
-- Input shape: (14-day lookback, 10 features)
-- LSTM stack: 64 units + dropout(0.2), then 32 units + dropout(0.2)
-- Dense: 16 units
-- Output: 14-day demand forecast
-"""
+"""Recurrent time-series demand forecasting model (TASK-103)."""
 from __future__ import annotations
 
 import pickle
-from pathlib import Path
+import time
 
 import numpy as np
 import pandas as pd
-from sklearn.metrics import mean_absolute_error, r2_score
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.preprocessing import StandardScaler
 
-from config import PKL_DIR, RANDOM_SEED, FORECAST_HORIZON
-from data.sequence_generator import (
-    FEATURE_COLS,
-    create_demand_sequences,
-    temporal_train_test_split,
-)
+from config import FORECAST_HORIZON, PKL_DIR, RANDOM_SEED
+from data.sequence_generator import generate_sequences, split_sequences
+from models.demand_model import FEATURE_COLS
 
 try:
     import tensorflow as tf
-    from tensorflow import keras
-except ImportError as exc:  # pragma: no cover
-    raise ImportError(
-        "TensorFlow is required for lstm_model.py. Install tensorflow>=2.13."
-    ) from exc
+    from tensorflow.keras import callbacks, layers, models
 
-PKL_LSTM_META = PKL_DIR / "demand_lstm_meta.pkl"
-PKL_GRU_META = PKL_DIR / "demand_gru_meta.pkl"
-MODEL_LSTM = PKL_DIR / "demand_lstm.keras"
-MODEL_GRU = PKL_DIR / "demand_gru.keras"
-
-LOOKBACK = 14
-HORIZON = FORECAST_HORIZON
+    TF_AVAILABLE = True
+except Exception:
+    TF_AVAILABLE = False
 
 
-# Ensure deterministic-ish behavior where possible.
-keras.utils.set_random_seed(RANDOM_SEED)
+LSTM_H5 = PKL_DIR / "demand_lstm.h5"
+GRU_H5 = PKL_DIR / "demand_gru.h5"
+LSTM_META = PKL_DIR / "demand_lstm_meta.pkl"
+GRU_META = PKL_DIR / "demand_gru_meta.pkl"
+LSTM_SCALER = PKL_DIR / "demand_lstm_scaler.pkl"
+GRU_SCALER = PKL_DIR / "demand_gru_scaler.pkl"
+LSTM_Y_SCALER = PKL_DIR / "demand_lstm_y_scaler.pkl"
+GRU_Y_SCALER = PKL_DIR / "demand_gru_y_scaler.pkl"
+
+
+def _paths(model_type: str) -> tuple:
+    key = model_type.lower()
+    if key == "lstm":
+        return LSTM_H5, LSTM_META, LSTM_SCALER, LSTM_Y_SCALER
+    if key == "gru":
+        return GRU_H5, GRU_META, GRU_SCALER, GRU_Y_SCALER
+    raise ValueError("model_type must be 'lstm' or 'gru'")
 
 
 def build_lstm_model(
-    input_shape: tuple[int, int] = (LOOKBACK, len(FEATURE_COLS)),
-    horizon: int = HORIZON,
-) -> keras.Model:
-    """Build LSTM architecture defined in TASK-103."""
-    model = keras.Sequential(
-        [
-            keras.layers.Input(shape=input_shape),
-            keras.layers.LSTM(64, return_sequences=True),
-            keras.layers.Dropout(0.2),
-            keras.layers.LSTM(32),
-            keras.layers.Dropout(0.2),
-            keras.layers.Dense(16, activation="relu"),
-            keras.layers.Dense(horizon),
-        ]
-    )
-    model.compile(optimizer=keras.optimizers.Adam(learning_rate=1e-3), loss="mae")
+    input_shape: tuple[int, int] = (14, 10),
+    output_horizon: int = FORECAST_HORIZON,
+    model_type: str = "lstm",
+):
+    """Build LSTM/GRU architecture for 14-step demand forecasting."""
+    if not TF_AVAILABLE:
+        raise RuntimeError("TensorFlow/Keras is not available")
+
+    tf.keras.utils.set_random_seed(RANDOM_SEED)
+    model = models.Sequential(name=f"{model_type.lower()}_demand_forecaster")
+
+    model.add(layers.Input(shape=input_shape))
+    if model_type.lower() == "gru":
+        model.add(layers.GRU(64, return_sequences=True, dropout=0.2))
+        model.add(layers.GRU(32, dropout=0.2))
+    else:
+        model.add(layers.LSTM(64, return_sequences=True, dropout=0.2))
+        model.add(layers.LSTM(32, dropout=0.2))
+
+    model.add(layers.Dense(16, activation="relu"))
+    model.add(layers.Dense(output_horizon, activation="linear"))
+
+    model.compile(optimizer="adam", loss="mse", metrics=["mae"])
     return model
 
 
-def build_gru_model(
-    input_shape: tuple[int, int] = (LOOKBACK, len(FEATURE_COLS)),
-    horizon: int = HORIZON,
-) -> keras.Model:
-    """Alternative GRU architecture for comparison experiments."""
-    model = keras.Sequential(
-        [
-            keras.layers.Input(shape=input_shape),
-            keras.layers.GRU(64, return_sequences=True),
-            keras.layers.Dropout(0.2),
-            keras.layers.GRU(32),
-            keras.layers.Dropout(0.2),
-            keras.layers.Dense(16, activation="relu"),
-            keras.layers.Dense(horizon),
-        ]
-    )
-    model.compile(optimizer=keras.optimizers.Adam(learning_rate=1e-3), loss="mae")
-    return model
+def _scale_sequences(X_train: np.ndarray, X_test: np.ndarray) -> tuple[np.ndarray, np.ndarray, StandardScaler]:
+    n_features = X_train.shape[2]
+    scaler = StandardScaler()
 
+    X_train_flat = X_train.reshape(-1, n_features)
+    X_test_flat = X_test.reshape(-1, n_features)
 
-def _select_model(model_type: str) -> tuple[keras.Model, Path, Path]:
-    model_type = model_type.lower().strip()
-    if model_type == "lstm":
-        return build_lstm_model(), MODEL_LSTM, PKL_LSTM_META
-    if model_type == "gru":
-        return build_gru_model(), MODEL_GRU, PKL_GRU_META
-    raise ValueError("model_type must be 'lstm' or 'gru'")
+    X_train_scaled = scaler.fit_transform(X_train_flat).reshape(X_train.shape)
+    X_test_scaled = scaler.transform(X_test_flat).reshape(X_test.shape)
+    return X_train_scaled, X_test_scaled, scaler
 
 
 def train(
     feat_df: pd.DataFrame,
     model_type: str = "lstm",
-    epochs: int = 30,
+    lookback: int = 14,
+    horizon: int = FORECAST_HORIZON,
+    epochs: int = 25,
     batch_size: int = 64,
+    max_samples: int = 25000,
 ) -> dict:
-    """
-    Train LSTM/GRU on sequence dataset and persist artifacts.
+    """Train recurrent model and persist checkpoint/meta/scaler."""
+    if not TF_AVAILABLE:
+        raise RuntimeError("TensorFlow/Keras is not installed")
 
-    Returns training/test metrics and training configuration.
-    """
-    feat_df = feat_df.dropna(subset=FEATURE_COLS + ["quantity_used", "item_id", "usage_date"])
-    X, y = create_demand_sequences(feat_df, lookback=LOOKBACK, horizon=HORIZON)
+    model_path, meta_path, scaler_path, y_scaler_path = _paths(model_type)
 
-    if len(X) < 20:
-        raise ValueError("Not enough sequence samples to train LSTM/GRU model")
+    X, y = generate_sequences(
+        feat_df,
+        lookback=lookback,
+        horizon=horizon,
+        feature_cols=FEATURE_COLS,
+        target_col="quantity_used",
+    )
+    if len(X) < 8:
+        raise ValueError("Not enough sequence samples for recurrent model training")
 
-    X_train, X_test, y_train, y_test = temporal_train_test_split(X, y, train_ratio=0.8)
+    if max_samples > 0 and len(X) > max_samples:
+        rng = np.random.default_rng(RANDOM_SEED)
+        idx = np.sort(rng.choice(len(X), size=max_samples, replace=False))
+        X = X[idx]
+        y = y[idx]
 
-    model, model_path, meta_path = _select_model(model_type)
-    model_path.parent.mkdir(parents=True, exist_ok=True)
+    X_train, X_test, y_train, y_test = split_sequences(X, y, train_ratio=0.8)
+    X_train_scaled, X_test_scaled, scaler = _scale_sequences(X_train, X_test)
 
-    early_stopping = keras.callbacks.EarlyStopping(
+    y_scaler = StandardScaler()
+    y_train_scaled = y_scaler.fit_transform(y_train.reshape(-1, 1)).reshape(y_train.shape)
+    y_test_scaled = y_scaler.transform(y_test.reshape(-1, 1)).reshape(y_test.shape)
+
+    model = build_lstm_model(
+        input_shape=(lookback, len(FEATURE_COLS)),
+        output_horizon=horizon,
+        model_type=model_type,
+    )
+
+    early_stop = callbacks.EarlyStopping(
         monitor="val_loss",
         patience=5,
         restore_best_weights=True,
     )
-    checkpoint = keras.callbacks.ModelCheckpoint(
+    checkpoint = callbacks.ModelCheckpoint(
         filepath=str(model_path),
         monitor="val_loss",
         save_best_only=True,
+        save_weights_only=False,
     )
 
-    history = model.fit(
-        X_train,
-        y_train,
-        validation_data=(X_test, y_test),
+    start = time.perf_counter()
+    model.fit(
+        X_train_scaled,
+        y_train_scaled,
+        validation_data=(X_test_scaled, y_test_scaled),
         epochs=epochs,
         batch_size=batch_size,
+        callbacks=[early_stop, checkpoint],
         verbose=0,
-        callbacks=[early_stopping, checkpoint],
     )
+    elapsed = time.perf_counter() - start
 
-    y_pred = model.predict(X_test, verbose=0)
-    mae = float(mean_absolute_error(y_test.flatten(), y_pred.flatten()))
-    r2 = float(r2_score(y_test.flatten(), y_pred.flatten()))
+    # Ensure final persisted model exists even if checkpoint callback skipped write.
+    if not model_path.exists():
+        model.save(str(model_path))
+
+    y_pred_scaled = model.predict(X_test_scaled, verbose=0)
+    y_pred = y_scaler.inverse_transform(y_pred_scaled.reshape(-1, 1)).reshape(y_pred_scaled.shape)
+    y_test_flat = y_test.reshape(-1)
+    y_pred_flat = y_pred.reshape(-1)
+
+    mae = float(mean_absolute_error(y_test_flat, y_pred_flat))
+    rmse = float(np.sqrt(mean_squared_error(y_test_flat, y_pred_flat)))
+    r2 = float(r2_score(y_test_flat, y_pred_flat))
+
+    with open(scaler_path, "wb") as f:
+        pickle.dump(scaler, f)
+    with open(y_scaler_path, "wb") as f:
+        pickle.dump(y_scaler, f)
 
     meta = {
-        "model_type": model_type,
-        "lookback": LOOKBACK,
-        "horizon": HORIZON,
-        "feature_cols": FEATURE_COLS,
-        "samples_train": int(len(X_train)),
-        "samples_test": int(len(X_test)),
-        "epochs_ran": int(len(history.history.get("loss", []))),
-        "best_val_loss": float(min(history.history.get("val_loss", [0.0]))),
+        "model_type": model_type.lower(),
+        "lookback": lookback,
+        "horizon": horizon,
+        "features": FEATURE_COLS,
+        "train_samples": int(len(X_train_scaled)),
+        "test_samples": int(len(X_test_scaled)),
         "mae": mae,
+        "rmse": rmse,
         "r2": r2,
-        "architecture": {
-            "input_shape": [LOOKBACK, len(FEATURE_COLS)],
-            "lstm_gru_units": [64, 32],
-            "dense_units": 16,
-            "output_horizon": HORIZON,
-        },
+        "training_time_sec": round(elapsed, 3),
     }
-
     with open(meta_path, "wb") as f:
         pickle.dump(meta, f)
 
-    print(f"[LSTMModel:{model_type.upper()}] MAE={mae:.2f} R2={r2:.3f}")
     return meta
 
 
-def _load_model_and_meta(model_type: str = "lstm") -> tuple[keras.Model, dict]:
-    model_type = model_type.lower().strip()
-    if model_type == "lstm":
-        model_path, meta_path = MODEL_LSTM, PKL_LSTM_META
-    elif model_type == "gru":
-        model_path, meta_path = MODEL_GRU, PKL_GRU_META
-    else:
-        raise ValueError("model_type must be 'lstm' or 'gru'")
-
-    if not model_path.exists() or not meta_path.exists():
-        raise FileNotFoundError(f"Model artifacts missing for model_type={model_type}")
-
-    model = keras.models.load_model(model_path)
-    with open(meta_path, "rb") as f:
-        meta = pickle.load(f)
-    return model, meta
-
-
 def is_trained(model_type: str = "lstm") -> bool:
-    """Check if persisted artifacts exist for a specific model type."""
-    model_type = model_type.lower().strip()
-    if model_type == "lstm":
-        return MODEL_LSTM.exists() and PKL_LSTM_META.exists()
-    if model_type == "gru":
-        return MODEL_GRU.exists() and PKL_GRU_META.exists()
-    return False
+    model_path, meta_path, scaler_path, y_scaler_path = _paths(model_type)
+    return model_path.exists() and meta_path.exists() and scaler_path.exists() and y_scaler_path.exists()
 
 
-def predict_forecast(feat_df: pd.DataFrame, item_id: int, model_type: str = "lstm") -> dict:
-    """
-    Forecast next 14 days for a specific item using trained LSTM/GRU model.
-    """
-    model, meta = _load_model_and_meta(model_type=model_type)
+def _load_meta(model_type: str = "lstm") -> dict:
+    _, meta_path, _, _ = _paths(model_type)
+    with open(meta_path, "rb") as f:
+        return pickle.load(f)
+
+
+def _load_scaler(model_type: str = "lstm") -> StandardScaler:
+    _, _, scaler_path, _ = _paths(model_type)
+    with open(scaler_path, "rb") as f:
+        return pickle.load(f)
+
+
+def _load_y_scaler(model_type: str = "lstm") -> StandardScaler:
+    _, _, _, y_scaler_path = _paths(model_type)
+    with open(y_scaler_path, "rb") as f:
+        return pickle.load(f)
+
+
+def _load_model(model_type: str = "lstm"):
+    if not TF_AVAILABLE:
+        raise RuntimeError("TensorFlow/Keras is not installed")
+    model_path, _, _, _ = _paths(model_type)
+    return tf.keras.models.load_model(str(model_path), compile=False)
+
+
+def predict_forecast(
+    feat_df: pd.DataFrame,
+    item_id: int,
+    model_type: str = "lstm",
+) -> dict:
+    """Generate 14-day forecast using saved LSTM/GRU model."""
+    if not is_trained(model_type=model_type):
+        return {"error": f"{model_type.upper()} model not trained"}
+
+    meta = _load_meta(model_type)
+    lookback = int(meta.get("lookback", 14))
+    horizon = int(meta.get("horizon", FORECAST_HORIZON))
+    features = meta.get("features", FEATURE_COLS)
 
     item_df = (
         feat_df[feat_df["item_id"] == item_id]
         .sort_values("usage_date")
-        .tail(meta["lookback"])
+        .reset_index(drop=True)
     )
-    if len(item_df) < meta["lookback"]:
-        return {"error": f"Need at least {meta['lookback']} days of history for item {item_id}"}
+    if len(item_df) < lookback:
+        return {"error": "Insufficient history for recurrent forecast"}
 
-    X_input = item_df[meta["feature_cols"]].astype(float).to_numpy()
-    X_input = X_input.reshape(1, meta["lookback"], len(meta["feature_cols"]))
+    seq = item_df[features].tail(lookback).astype(float).to_numpy()
+    scaler = _load_scaler(model_type)
+    seq_scaled = scaler.transform(seq).reshape(1, lookback, len(features))
 
-    pred = model.predict(X_input, verbose=0)[0]
-    pred = np.maximum(pred, 0)
+    model = _load_model(model_type)
+    y_scaler = _load_y_scaler(model_type)
+    pred_scaled = model.predict(seq_scaled, verbose=0)[0]
+    pred = y_scaler.inverse_transform(np.asarray(pred_scaled).reshape(-1, 1)).reshape(-1)
+    pred = np.maximum(0.0, np.asarray(pred, dtype=float))[:horizon]
 
-    start_date = pd.Timestamp.today().normalize()
+    last_date = pd.Timestamp(item_df["usage_date"].iloc[-1]).normalize()
     forecast = []
-    for i, value in enumerate(pred, start=1):
-        target_dt = start_date + pd.Timedelta(days=i)
-        val = float(value)
+    for i, val in enumerate(pred, start=1):
+        target_date = last_date + pd.Timedelta(days=i)
         forecast.append(
             {
-                "date": target_dt.strftime("%Y-%m-%d"),
-                "predicted": round(val, 1),
-                "lower": round(max(0.0, val * 0.8), 1),
-                "upper": round(val * 1.2, 1),
+                "date": target_date.strftime("%Y-%m-%d"),
+                "predicted": round(float(val), 1),
+                "lower": round(max(0.0, float(val) * 0.8), 1),
+                "upper": round(float(val) * 1.2, 1),
             }
         )
 
     return {
         "item_id": item_id,
-        "model_type": model_type,
+        "item_name": item_df["item_name"].iloc[0] if "item_name" in item_df.columns else str(item_id),
+        "model": model_type.upper(),
         "forecast": forecast,
-        "metrics": {"mae": meta.get("mae"), "r2": meta.get("r2")},
+        "metrics": meta,
     }

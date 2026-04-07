@@ -2,9 +2,9 @@
 Demand Forecasting Model
 
 Models:
-  1. Linear Regression (baseline)
-  2. ARIMA (time-series baseline)
-  3. XGBoost Regressor (primary model)
+    1. Linear Regression (baseline)
+    2. ARIMA (time-series baseline)
+    3. LightGBM Regressor (primary model)
 
 Metrics: MAE, RMSE, R²
 """
@@ -18,7 +18,6 @@ import pandas as pd
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
-from xgboost import XGBRegressor
 
 try:
     from statsmodels.tsa.arima.model import ARIMA
@@ -27,6 +26,12 @@ except ImportError:
     ARIMA_AVAILABLE = False
 
 from config import PKL_DIR, RANDOM_SEED, FORECAST_HORIZON
+from models.lightgbm_model import (
+    build_model as build_lgbm_model,
+    cross_validate_r2,
+    load_model as load_lgbm_model,
+    save_model as save_lgbm_model,
+)
 
 FEATURE_COLS = [
     "rolling_7d", "rolling_30d", "lag_7", "lag_14",
@@ -35,7 +40,7 @@ FEATURE_COLS = [
 ]
 TARGET_COL = "quantity_used"
 
-PKL_XGB = PKL_DIR / "demand_xgb.pkl"
+PKL_LGBM = PKL_DIR / "demand_lgbm.pkl"
 PKL_LR  = PKL_DIR / "demand_lr.pkl"
 PKL_META = PKL_DIR / "demand_meta.pkl"
 
@@ -52,21 +57,17 @@ def train(feat_df: pd.DataFrame) -> dict:
         X, y, test_size=0.2, random_state=RANDOM_SEED, shuffle=False
     )
 
-    # ── XGBoost ──────────────────────────────────────────────────────────────
-    xgb = XGBRegressor(
-        n_estimators=200, max_depth=6, learning_rate=0.08,
-        subsample=0.8, colsample_bytree=0.8,
-        random_state=RANDOM_SEED, verbosity=0,
-    )
-    xgb.fit(X_train, y_train)
-    y_pred_xgb = xgb.predict(X_test)
+    # ── LightGBM ─────────────────────────────────────────────────────────────
+    lgbm = build_lgbm_model(RANDOM_SEED)
+    lgbm.fit(X_train, y_train)
+    y_pred_lgbm = lgbm.predict(X_test)
 
-    mae_xgb  = float(mean_absolute_error(y_test, y_pred_xgb))
-    rmse_xgb = float(np.sqrt(mean_squared_error(y_test, y_pred_xgb)))
-    r2_xgb   = float(r2_score(y_test, y_pred_xgb))
+    mae_lgbm  = float(mean_absolute_error(y_test, y_pred_lgbm))
+    rmse_lgbm = float(np.sqrt(mean_squared_error(y_test, y_pred_lgbm)))
+    r2_lgbm   = float(r2_score(y_test, y_pred_lgbm))
+    cv_r2_scores = cross_validate_r2(X_train, y_train, RANDOM_SEED, folds=5)
 
-    with open(PKL_XGB, "wb") as f:
-        pickle.dump(xgb, f)
+    save_lgbm_model(lgbm, PKL_LGBM)
 
     # ── Linear Regression ────────────────────────────────────────────────────
     lr = LinearRegression()
@@ -104,28 +105,41 @@ def train(feat_df: pd.DataFrame) -> dict:
     # ── Feature importance ───────────────────────────────────────────────────
     importance = [
         {"feature": col, "importance": float(imp)}
-        for col, imp in zip(FEATURE_COLS, xgb.feature_importances_)
+        for col, imp in zip(FEATURE_COLS, lgbm.feature_importances_)
     ]
     importance.sort(key=lambda x: x["importance"], reverse=True)
 
     meta = {
-        "xgb": {"mae": mae_xgb,  "rmse": rmse_xgb,  "r2": r2_xgb},
+        # Keep xgb key for backward compatibility with existing frontend types.
+        "xgb": {"mae": mae_lgbm,  "rmse": rmse_lgbm,  "r2": r2_lgbm},
+        "lgbm": {
+            "mae": mae_lgbm,
+            "rmse": rmse_lgbm,
+            "r2": r2_lgbm,
+            "cv_r2_scores": cv_r2_scores,
+            "cv_r2_mean": float(np.mean(cv_r2_scores)) if cv_r2_scores else None,
+        },
         "lr":  {"mae": mae_lr,   "rmse": rmse_lr,    "r2": r2_lr},
         "arima": {"mae": mae_arima, "rmse": rmse_arima, "r2": r2_arima},
         "feature_importance": importance,
         "feature_cols": FEATURE_COLS,
+        "primary_model": "LightGBM",
     }
     with open(PKL_META, "wb") as f:
         pickle.dump(meta, f)
 
-    print(f"[DemandModel] XGB MAE={mae_xgb:.2f}  RMSE={rmse_xgb:.2f}  R²={r2_xgb:.3f}")
+    print(f"[DemandModel] LGBM MAE={mae_lgbm:.2f}  RMSE={rmse_lgbm:.2f}  R²={r2_lgbm:.3f}")
     return meta
 
 
 # ─── Inference ───────────────────────────────────────────────────────────────
 
-def _load_xgb() -> XGBRegressor:
-    with open(PKL_XGB, "rb") as f:
+def _load_lgbm():
+    return load_lgbm_model(PKL_LGBM)
+
+
+def _load_lr() -> LinearRegression:
+    with open(PKL_LR, "rb") as f:
         return pickle.load(f)
 
 
@@ -135,7 +149,54 @@ def _load_meta() -> dict:
 
 
 def is_trained() -> bool:
-    return PKL_XGB.exists() and PKL_META.exists()
+    return PKL_LGBM.exists() and PKL_META.exists()
+
+
+def _iterative_forecast(
+    model,
+    item_df: pd.DataFrame,
+    horizon: int = FORECAST_HORIZON,
+) -> list[dict]:
+    """Run iterative horizon forecasting with rolling feature updates."""
+    history = list(item_df["quantity_used"].values)
+    forecast = []
+    today = pd.Timestamp.today().normalize()
+
+    for day in range(horizon):
+        arr = np.array(history)
+        r7 = arr[-7:].mean() if len(arr) >= 7 else arr.mean()
+        r30 = arr[-30:].mean() if len(arr) >= 30 else arr.mean()
+        l7 = arr[-7] if len(arr) >= 7 else arr[0]
+        l14 = arr[-14] if len(arr) >= 14 else arr[0]
+        vel = float(np.polyfit(range(min(14, len(arr))), arr[-min(14, len(arr)):], 1)[0])
+        target_dt = today + pd.Timedelta(days=day + 1)
+        stock_ratio = r7 / max(1, item_df["reorder_point"].iloc[0])
+        features = np.array(
+            [[
+                r7,
+                r30,
+                l7,
+                l14,
+                target_dt.dayofweek,
+                target_dt.month,
+                vel,
+                stock_ratio,
+                item_df["avg_lead_time_days"].iloc[0],
+                item_df["reliability_score"].iloc[0],
+            ]]
+        )
+        pred = float(max(0, model.predict(features)[0]))
+        forecast.append(
+            {
+                "date": target_dt.strftime("%Y-%m-%d"),
+                "predicted": round(pred, 1),
+                "lower": round(max(0, pred * 0.80), 1),
+                "upper": round(pred * 1.20, 1),
+            }
+        )
+        history.append(pred)
+
+    return forecast
 
 
 def predict_forecast(feat_df: pd.DataFrame, item_id: int) -> dict:
@@ -143,7 +204,7 @@ def predict_forecast(feat_df: pd.DataFrame, item_id: int) -> dict:
     Generate a 14-day demand forecast for a specific item.
     Uses XGBoost iteratively with rolling feature updates.
     """
-    xgb  = _load_xgb()
+    lgbm = _load_lgbm()
     meta = _load_meta()
 
     item_df = (
@@ -156,35 +217,7 @@ def predict_forecast(feat_df: pd.DataFrame, item_id: int) -> dict:
     if item_df.empty:
         return {"error": "No data for this item"}
 
-    # Seed forecast from last known state
-    history   = list(item_df["quantity_used"].values)
-    forecast  = []
-    today     = pd.Timestamp.today().normalize()
-
-    for day in range(FORECAST_HORIZON):
-        arr = np.array(history)
-        r7  = arr[-7:].mean()  if len(arr) >= 7  else arr.mean()
-        r30 = arr[-30:].mean() if len(arr) >= 30 else arr.mean()
-        l7  = arr[-7]          if len(arr) >= 7  else arr[0]
-        l14 = arr[-14]         if len(arr) >= 14 else arr[0]
-        vel = float(np.polyfit(range(min(14, len(arr))), arr[-min(14,len(arr)):], 1)[0])
-        target_dt  = today + pd.Timedelta(days=day + 1)
-        stock_ratio = r7 / max(1, item_df["reorder_point"].iloc[0])
-        features = np.array([[
-            r7, r30, l7, l14,
-            target_dt.dayofweek, target_dt.month,
-            vel, stock_ratio,
-            item_df["avg_lead_time_days"].iloc[0],
-            item_df["reliability_score"].iloc[0],
-        ]])
-        pred = float(max(0, xgb.predict(features)[0]))
-        forecast.append({
-            "date": target_dt.strftime("%Y-%m-%d"),
-            "predicted": round(pred, 1),
-            "lower":     round(max(0, pred * 0.80), 1),
-            "upper":     round(pred * 1.20, 1),
-        })
-        history.append(pred)
+    forecast = _iterative_forecast(lgbm, item_df, horizon=FORECAST_HORIZON)
 
     return {
         "item_id":   item_id,
@@ -192,4 +225,30 @@ def predict_forecast(feat_df: pd.DataFrame, item_id: int) -> dict:
         "forecast":  forecast,
         "metrics":   meta,
         "feature_importance": meta["feature_importance"],
+    }
+
+
+def predict_forecast_lr(feat_df: pd.DataFrame, item_id: int) -> dict:
+    """Generate a 14-day demand forecast using the persisted Linear Regression model."""
+    if not PKL_LR.exists():
+        return {"error": "Linear Regression model not trained"}
+
+    lr = _load_lr()
+    meta = _load_meta()
+    item_df = (
+        feat_df[feat_df["item_id"] == item_id]
+        .sort_values("usage_date")
+        .tail(60)
+        .reset_index(drop=True)
+    )
+    if item_df.empty:
+        return {"error": "No data for this item"}
+
+    forecast = _iterative_forecast(lr, item_df, horizon=FORECAST_HORIZON)
+    return {
+        "item_id": item_id,
+        "item_name": item_df["item_name"].iloc[0] if "item_name" in item_df else str(item_id),
+        "forecast": forecast,
+        "metrics": meta.get("lr", {}),
+        "model": "LinearRegression",
     }

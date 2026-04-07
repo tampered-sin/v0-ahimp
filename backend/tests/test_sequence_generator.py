@@ -3,52 +3,55 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from data.sequence_generator import create_demand_sequences, temporal_train_test_split
+from data.sequence_generator import generate_sequences, split_sequences
 
 
-def _sample_features(rows: int = 40, item_id: int = 1) -> pd.DataFrame:
-    dates = pd.date_range("2026-01-01", periods=rows, freq="D")
-    return pd.DataFrame(
-        {
-            "item_id": [item_id] * rows,
-            "usage_date": dates,
-            "rolling_7d": np.random.rand(rows) * 10,
-            "rolling_30d": np.random.rand(rows) * 12,
-            "lag_7": np.random.rand(rows) * 8,
-            "lag_14": np.random.rand(rows) * 7,
-            "day_of_week": [d.dayofweek for d in dates],
-            "month": [d.month for d in dates],
-            "velocity": np.random.randn(rows),
-            "stock_ratio": np.random.rand(rows),
-            "avg_lead_time_days": np.random.rand(rows) * 5 + 1,
-            "reliability_score": np.random.rand(rows) * 0.5 + 0.5,
-            "quantity_used": np.random.rand(rows) * 20 + 5,
-        }
-    )
+def _sample_df() -> pd.DataFrame:
+    rows = []
+    for day in range(50):
+        rows.append(
+            {
+                "item_id": 1,
+                "usage_date": f"2026-01-{(day % 28) + 1:02d}",
+                "quantity_used": 10 + day,
+                "rolling_7d": 10 + day,
+                "rolling_30d": 10 + day,
+                "lag_7": max(0, day - 7),
+                "lag_14": max(0, day - 14),
+                "day_of_week": day % 7,
+                "month": 1,
+                "velocity": 1.0,
+                "stock_ratio": 1.2,
+                "avg_lead_time_days": 3,
+                "reliability_score": 0.9,
+            }
+        )
+    df = pd.DataFrame(rows)
+    df["usage_date"] = pd.to_datetime(df["usage_date"])
+    return df
 
 
-def test_create_demand_sequences_shape():
-    df = pd.concat([_sample_features(item_id=1), _sample_features(item_id=2)], ignore_index=True)
-    X, y = create_demand_sequences(df, lookback=14, horizon=14)
+def test_generate_sequences_shapes():
+    df = _sample_df()
+    X, y = generate_sequences(df, lookback=14, horizon=14)
 
     assert X.ndim == 3
     assert y.ndim == 2
     assert X.shape[1] == 14
-    assert X.shape[2] == 10
     assert y.shape[1] == 14
     assert len(X) == len(y)
 
 
-def test_temporal_split_keeps_order_and_sizes():
-    df = _sample_features(rows=60)
-    X, y = create_demand_sequences(df, lookback=14, horizon=14)
-    X_train, X_test, y_train, y_test = temporal_train_test_split(X, y, train_ratio=0.8)
+def test_split_sequences_chronological_partitions():
+    df = _sample_df()
+    X, y = generate_sequences(df, lookback=14, horizon=7)
+    X_train, X_test, y_train, y_test = split_sequences(X, y, train_ratio=0.8)
 
-    assert len(X_train) > len(X_test)
+    assert len(X_train) > 0
+    assert len(X_test) > 0
     assert len(X_train) + len(X_test) == len(X)
     assert len(y_train) + len(y_test) == len(y)

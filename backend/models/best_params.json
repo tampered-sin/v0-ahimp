@@ -1,0 +1,153 @@
+{
+  "lightgbm": {
+    "best_value": 0.9936422421979462,
+    "best_params": {
+      "n_estimators": 252,
+      "max_depth": 3,
+      "learning_rate": 0.03220606688461339,
+      "subsample": 0.9482199591925323,
+      "colsample_bytree": 0.5539383035742367,
+      "num_leaves": 109,
+      "reg_alpha": 0.4185807112312875,
+      "reg_lambda": 0.6483224982464586
+    },
+    "top3": [
+      {
+        "number": 80,
+        "value": 0.9936422421979462,
+        "params": {
+          "n_estimators": 252,
+          "max_depth": 3,
+          "learning_rate": 0.03220606688461339,
+          "subsample": 0.9482199591925323,
+          "colsample_bytree": 0.5539383035742367,
+          "num_leaves": 109,
+          "reg_alpha": 0.4185807112312875,
+          "reg_lambda": 0.6483224982464586
+        }
+      },
+      {
+        "number": 89,
+        "value": 0.9935525645984389,
+        "params": {
+          "n_estimators": 183,
+          "max_depth": 3,
+          "learning_rate": 0.038090091745483834,
+          "subsample": 0.9258199996388448,
+          "colsample_bytree": 0.583983794283278,
+          "num_leaves": 62,
+          "reg_alpha": 0.2665701559537155,
+          "reg_lambda": 0.688810809114158
+        }
+      },
+      {
+        "number": 96,
+        "value": 0.9932625053700277,
+        "params": {
+          "n_estimators": 205,
+          "max_depth": 3,
+          "learning_rate": 0.03926915867764721,
+          "subsample": 0.9813444896061284,
+          "colsample_bytree": 0.6119260956297848,
+          "num_leaves": 65,
+          "reg_alpha": 0.4762146821074697,
+          "reg_lambda": 0.7023673161563547
+        }
+      }
+    ]
+  },
+  "catboost": {
+    "best_value": 0.9943351455860826,
+    "best_params": {
+      "iterations": 269,
+      "depth": 4,
+      "learning_rate": 0.2258256680466575,
+      "l2_leaf_reg": 8.852869949362383,
+      "subsample": 0.8407434980706122,
+      "colsample_bylevel": 0.749443524456065,
+      "bagging_temperature": 1.0485853598869084
+    },
+    "top3": [
+      {
+        "number": 21,
+        "value": 0.9943351455860826,
+        "params": {
+          "iterations": 269,
+          "depth": 4,
+          "learning_rate": 0.2258256680466575,
+          "l2_leaf_reg": 8.852869949362383,
+          "subsample": 0.8407434980706122,
+          "colsample_bylevel": 0.749443524456065,
+          "bagging_temperature": 1.0485853598869084
+        }
+      },
+      {
+        "number": 95,
+        "value": 0.9940079143096219,
+        "params": {
+          "iterations": 274,
+          "depth": 4,
+          "learning_rate": 0.21353113516398334,
+          "l2_leaf_reg": 5.624536210339389,
+          "subsample": 0.8620075023015762,
+          "colsample_bylevel": 0.9272987615570591,
+          "bagging_temperature": 4.590781744313792
+        }
+      },
+      {
+        "number": 18,
+        "value": 0.9939188310479269,
+        "params": {
+          "iterations": 294,
+          "depth": 3,
+          "learning_rate": 0.174411594011689,
+          "l2_leaf_reg": 7.5430409456311835,
+          "subsample": 0.8671553784997497,
+          "colsample_bylevel": 0.7721869842250872,
+          "bagging_temperature": 0.06589607190461777
+        }
+      }
+    ]
+  },
+  "lstm": {
+    "best_value": 18.776020050048828,
+    "best_params": {
+      "lookback": 12,
+      "epochs": 39,
+      "batch_size": 32,
+      "max_samples": 3000
+    },
+    "top3": [
+      {
+        "number": 0,
+        "value": 18.776020050048828,
+        "params": {
+          "lookback": 12,
+          "epochs": 39,
+          "batch_size": 32,
+          "max_samples": 3000
+        }
+      },
+      {
+        "number": 45,
+        "value": 19.234939575195312,
+        "params": {
+          "lookback": 7,
+          "epochs": 32,
+          "batch_size": 128,
+          "max_samples": 9000
+        }
+      },
+      {
+        "number": 46,
+        "value": 19.234939575195312,
+        "params": {
+          "lookback": 7,
+          "epochs": 32,
+          "batch_size": 128,
+          "max_samples": 9000
+        }
+      }
+    ]
+  }
+}

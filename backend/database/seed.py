@@ -2,7 +2,7 @@
 Synthetic data seeder.
 
 Creates departments, suppliers, items, batches, inventory stock, and
-~2 years of daily Consumption_Records derived from the mock inventory items
+~20 years of daily Consumption_Records derived from the mock inventory items
 used in the Next.js frontend.
 """
 from __future__ import annotations
@@ -117,7 +117,7 @@ def seed(db: Session) -> None:
 
     # ── Items + Batches + Stock ───────────────────────────────────────────────
     today        = date.today()
-    start_date   = date(today.year - 2, today.month, today.day)
+    start_date   = date(today.year - 20, today.month, today.day)
 
     item_objs = []
     batch_map: dict[int, int] = {}  # item_idx → batch_id
@@ -178,7 +178,7 @@ def seed(db: Session) -> None:
             )
             db.add(eu)
 
-    # ── Consumption Records (≈2 years daily) ─────────────────────────────────
+    # ── Consumption Records (≈20 years daily) ─────────────────────────────────
     total_days = (today - start_date).days
     BATCH_SIZE = 500
     count = 0
