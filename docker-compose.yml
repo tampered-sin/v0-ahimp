@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database Service
+  postgres:
+    image: postgres:15-alpine
+    container_name: ahimp_postgres
+    environment:
+      POSTGRES_DB: ahimp
+      POSTGRES_USER: ahimp_user
+      POSTGRES_PASSWORD: ahimp_secure_password_2024
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - ahimp_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ahimp_user -d ahimp"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # FastAPI Backend Service
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ahimp_backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://ahimp_user:ahimp_secure_password_2024@postgres:5432/ahimp
+      PYTHONUNBUFFERED: 1
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - ahimp_network
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+networks:
+  ahimp_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local

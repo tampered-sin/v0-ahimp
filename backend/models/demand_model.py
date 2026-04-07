@@ -2,9 +2,9 @@
 Demand Forecasting Model
 
 Models:
-  1. Linear Regression (baseline)
-  2. ARIMA (time-series baseline)
-  3. XGBoost Regressor (primary model)
+    1. Linear Regression (baseline)
+    2. ARIMA (time-series baseline)
+    3. LightGBM Regressor (primary model)
 
 Metrics: MAE, RMSE, R²
 """
@@ -18,7 +18,6 @@ import pandas as pd
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
-from xgboost import XGBRegressor
 
 try:
     from statsmodels.tsa.arima.model import ARIMA
@@ -27,6 +26,12 @@ except ImportError:
     ARIMA_AVAILABLE = False
 
 from config import PKL_DIR, RANDOM_SEED, FORECAST_HORIZON
+from models.lightgbm_model import (
+    build_model as build_lgbm_model,
+    cross_validate_r2,
+    load_model as load_lgbm_model,
+    save_model as save_lgbm_model,
+)
 
 FEATURE_COLS = [
     "rolling_7d", "rolling_30d", "lag_7", "lag_14",
@@ -35,7 +40,7 @@ FEATURE_COLS = [
 ]
 TARGET_COL = "quantity_used"
 
-PKL_XGB = PKL_DIR / "demand_xgb.pkl"
+PKL_LGBM = PKL_DIR / "demand_lgbm.pkl"
 PKL_LR  = PKL_DIR / "demand_lr.pkl"
 PKL_META = PKL_DIR / "demand_meta.pkl"
 
@@ -52,21 +57,17 @@ def train(feat_df: pd.DataFrame) -> dict:
         X, y, test_size=0.2, random_state=RANDOM_SEED, shuffle=False
     )
 
-    # ── XGBoost ──────────────────────────────────────────────────────────────
-    xgb = XGBRegressor(
-        n_estimators=200, max_depth=6, learning_rate=0.08,
-        subsample=0.8, colsample_bytree=0.8,
-        random_state=RANDOM_SEED, verbosity=0,
-    )
-    xgb.fit(X_train, y_train)
-    y_pred_xgb = xgb.predict(X_test)
+    # ── LightGBM ─────────────────────────────────────────────────────────────
+    lgbm = build_lgbm_model(RANDOM_SEED)
+    lgbm.fit(X_train, y_train)
+    y_pred_lgbm = lgbm.predict(X_test)
 
-    mae_xgb  = float(mean_absolute_error(y_test, y_pred_xgb))
-    rmse_xgb = float(np.sqrt(mean_squared_error(y_test, y_pred_xgb)))
-    r2_xgb   = float(r2_score(y_test, y_pred_xgb))
+    mae_lgbm  = float(mean_absolute_error(y_test, y_pred_lgbm))
+    rmse_lgbm = float(np.sqrt(mean_squared_error(y_test, y_pred_lgbm)))
+    r2_lgbm   = float(r2_score(y_test, y_pred_lgbm))
+    cv_r2_scores = cross_validate_r2(X_train, y_train, RANDOM_SEED, folds=5)
 
-    with open(PKL_XGB, "wb") as f:
-        pickle.dump(xgb, f)
+    save_lgbm_model(lgbm, PKL_LGBM)
 
     # ── Linear Regression ────────────────────────────────────────────────────
     lr = LinearRegression()
@@ -104,29 +105,37 @@ def train(feat_df: pd.DataFrame) -> dict:
     # ── Feature importance ───────────────────────────────────────────────────
     importance = [
         {"feature": col, "importance": float(imp)}
-        for col, imp in zip(FEATURE_COLS, xgb.feature_importances_)
+        for col, imp in zip(FEATURE_COLS, lgbm.feature_importances_)
     ]
     importance.sort(key=lambda x: x["importance"], reverse=True)
 
     meta = {
-        "xgb": {"mae": mae_xgb,  "rmse": rmse_xgb,  "r2": r2_xgb},
+        # Keep xgb key for backward compatibility with existing frontend types.
+        "xgb": {"mae": mae_lgbm,  "rmse": rmse_lgbm,  "r2": r2_lgbm},
+        "lgbm": {
+            "mae": mae_lgbm,
+            "rmse": rmse_lgbm,
+            "r2": r2_lgbm,
+            "cv_r2_scores": cv_r2_scores,
+            "cv_r2_mean": float(np.mean(cv_r2_scores)) if cv_r2_scores else None,
+        },
         "lr":  {"mae": mae_lr,   "rmse": rmse_lr,    "r2": r2_lr},
         "arima": {"mae": mae_arima, "rmse": rmse_arima, "r2": r2_arima},
         "feature_importance": importance,
         "feature_cols": FEATURE_COLS,
+        "primary_model": "LightGBM",
     }
     with open(PKL_META, "wb") as f:
         pickle.dump(meta, f)
 
-    print(f"[DemandModel] XGB MAE={mae_xgb:.2f}  RMSE={rmse_xgb:.2f}  R²={r2_xgb:.3f}")
+    print(f"[DemandModel] LGBM MAE={mae_lgbm:.2f}  RMSE={rmse_lgbm:.2f}  R²={r2_lgbm:.3f}")
     return meta
 
 
 # ─── Inference ───────────────────────────────────────────────────────────────
 
-def _load_xgb() -> XGBRegressor:
-    with open(PKL_XGB, "rb") as f:
-        return pickle.load(f)
+def _load_lgbm():
+    return load_lgbm_model(PKL_LGBM)
 
 
 def _load_meta() -> dict:
@@ -135,7 +144,7 @@ def _load_meta() -> dict:
 
 
 def is_trained() -> bool:
-    return PKL_XGB.exists() and PKL_META.exists()
+    return PKL_LGBM.exists() and PKL_META.exists()
 
 
 def predict_forecast(feat_df: pd.DataFrame, item_id: int) -> dict:
@@ -143,7 +152,7 @@ def predict_forecast(feat_df: pd.DataFrame, item_id: int) -> dict:
     Generate a 14-day demand forecast for a specific item.
     Uses XGBoost iteratively with rolling feature updates.
     """
-    xgb  = _load_xgb()
+    lgbm = _load_lgbm()
     meta = _load_meta()
 
     item_df = (
@@ -177,7 +186,7 @@ def predict_forecast(feat_df: pd.DataFrame, item_id: int) -> dict:
             item_df["avg_lead_time_days"].iloc[0],
             item_df["reliability_score"].iloc[0],
         ]])
-        pred = float(max(0, xgb.predict(features)[0]))
+        pred = float(max(0, lgbm.predict(features)[0]))
         forecast.append({
             "date": target_dt.strftime("%Y-%m-%d"),
             "predicted": round(pred, 1),
