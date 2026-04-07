@@ -24,7 +24,8 @@ from models.catboost_model import (
     save_model,
     load_model,
     get_feature_importance,
-    prepare_catboost_array,
+    get_shap_importance,
+    prepare_catboost_input,
 )
 
 
@@ -90,10 +91,9 @@ class TestCrossValidationWithCategorical:
         cat2 = np.random.randint(0, 3, (500, 1))
 
         X = np.column_stack([X_numeric, cat1, cat2])
-        cat_indices = [10, 11]
-        X = prepare_catboost_array(X, cat_indices)
 
-        y = X_numeric[:, 0] * 2 + cat1[:, 0] * 0.5 + np.random.randn(500) * 0.1
+        y = X[:, 0] * 2 + X[:, 10] * 0.5 + np.random.randn(500) * 0.1
+        cat_indices = [10, 11]
 
         return X, y, cat_indices
 
@@ -111,16 +111,15 @@ class TestCrossValidationWithCategorical:
         X_numeric = np.random.randn(500, 10)
 
         # Create categorical features
-        cat1 = np.random.randint(0, 5, 500)
-        cat2 = np.random.randint(0, 3, 500)
+        cat1 = np.random.randint(0, 5, (500, 1))
+        cat2 = np.random.randint(0, 3, (500, 1))
 
         X = np.column_stack([X_numeric, cat1, cat2])
-        cat_indices = [10, 11]
-        X = prepare_catboost_array(X, cat_indices)
 
         # Target strongly depends on categorical features
-        y = cat1 * 5 + cat2 * 3 + X_numeric[:, 0] + np.random.randn(500) * 0.5
+        y = X[:, 10] * 5 + X[:, 11] * 3 + X[:, 0] + np.random.randn(500) * 0.5
 
+        cat_indices = [10, 11]
         scores = cross_validate_r2(X, y, cat_indices, random_seed=42, folds=3)
 
         # Should get decent score with categorical support
@@ -130,20 +129,18 @@ class TestCrossValidationWithCategorical:
     def trained_model_with_cat(self):
         """Create and train a model with categorical features."""
         np.random.seed(42)
-        X_numeric = np.random.randn(200, 8)
-        cat1 = np.random.randint(0, 4, 200)
-        cat2 = np.random.randint(0, 2, 200)
+        X = np.random.randn(200, 10)
+        X[:, 8] = np.random.randint(0, 4, 200)
+        X[:, 9] = np.random.randint(0, 2, 200)
 
-        X = np.column_stack([X_numeric, cat1, cat2])
-        cat_indices = [8, 9]
-        X = prepare_catboost_array(X, cat_indices)
+        y = X[:, 0] * 2 + X[:, 8] * 1.0 + np.random.randn(200) * 0.5
 
-        y = X_numeric[:, 0] * 2 + cat1 * 1.0 + np.random.randn(200) * 0.5
+        X_prepared = prepare_catboost_input(X, [8, 9])
 
         model = build_model(random_seed=42)
-        model.fit(X, y, cat_features=cat_indices, verbose=False)
+        model.fit(X_prepared, y, cat_features=[8, 9], verbose=False)
 
-        return model, X, y
+        return model, X_prepared, y
 
     def test_save_model_creates_file(self, trained_model_with_cat):
         """Test that save_model creates a pickle file."""
@@ -179,19 +176,17 @@ class TestFeatureImportanceWithCategorical:
     def test_feature_importance_has_categorical_flag(self):
         """Test that feature importance includes categorical flag."""
         np.random.seed(42)
-        X_numeric = np.random.randn(200, 4)
-        cat_col = np.random.randint(0, 3, 200)
+        X = np.random.randn(200, 5)
+        X[:, 3] = np.random.randint(0, 3, 200)  # categorical
 
-        X = np.column_stack([X_numeric, cat_col])
-        cat_indices = [4]
-        X = prepare_catboost_array(X, cat_indices)
+        y = X[:, 0] * 2 + X[:, 3] * 1.5 + np.random.randn(200) * 0.1
 
-        y = X_numeric[:, 0] * 2 + cat_col * 1.5 + np.random.randn(200) * 0.1
+        X_prepared = prepare_catboost_input(X, [3])
 
         model = build_model(random_seed=42)
-        model.fit(X, y, cat_features=cat_indices, verbose=False)
+        model.fit(X_prepared, y, cat_features=[3], verbose=False)
 
-        feature_names = ["f0", "f1", "f2", "f3", "f3_cat"]
+        feature_names = ["f0", "f1", "f2", "f3_cat", "f4"]
         cat_names = ["f3_cat"]
 
         importance = get_feature_importance(model, feature_names, cat_names)
@@ -217,21 +212,21 @@ class TestCatBoostVsNumeric:
         n_samples = 500
 
         # Numeric features (weakly predictive)
-        X_numeric = np.random.randn(n_samples, 5)
+        X = np.random.randn(n_samples, 5)
 
         # Categorical features (strongly predictive)
-        cat1 = np.random.randint(0, 10, n_samples)
-        cat2 = np.random.randint(0, 5, n_samples)
-
-        X = np.column_stack([X_numeric, cat1, cat2])
-        cat_indices = [5, 6]
-        X = prepare_catboost_array(X, cat_indices)
+        X_cat = np.column_stack([
+            np.random.randint(0, 10, n_samples),
+            np.random.randint(0, 5, n_samples),
+        ])
+        X = np.column_stack([X, X_cat])
 
         # Target depends mostly on categorical features
-        y = cat1 * 3 + cat2 * 2 + X_numeric[:, 0] * 0.1 + np.random.randn(n_samples) * 0.5
+        y = X[:, 5] * 3 + X[:, 6] * 2 + X[:, 0] * 0.1 + np.random.randn(n_samples) * 0.5
 
+        X_prepared = prepare_catboost_input(X, [5, 6])
         model = build_model(random_seed=42)
-        model.fit(X, y, cat_features=cat_indices, verbose=False)
+        model.fit(X_prepared, y, cat_features=[5, 6], verbose=False)
 
         feature_names = [f"numeric_{i}" for i in range(5)] + ["category_1", "category_2"]
         cat_names = ["category_1", "category_2"]
@@ -241,6 +236,29 @@ class TestCatBoostVsNumeric:
         # Categorical features should be in top ranks
         top_3_features = [x['feature'] for x in importance[:3]]
         assert any(cat in top_3_features for cat in cat_names)
+
+
+class TestShapImportance:
+    """Test SHAP integration for CatBoost."""
+
+    def test_get_shap_importance_returns_list(self):
+        np.random.seed(42)
+        X = np.random.randn(150, 6)
+        X[:, 4] = np.random.randint(0, 3, 150)
+        y = X[:, 0] * 1.8 + X[:, 4] * 1.2 + np.random.randn(150) * 0.2
+
+        X_prepared = prepare_catboost_input(X, [4])
+        model = build_model(random_seed=42)
+        model.fit(X_prepared, y, cat_features=[4], verbose=False)
+
+        feature_names = [f"f{i}" for i in range(6)]
+        cat_names = ["f4"]
+        shap_imp = get_shap_importance(model, X_prepared, feature_names, cat_names, max_samples=100)
+
+        assert isinstance(shap_imp, list)
+        if shap_imp:
+            assert "feature" in shap_imp[0]
+            assert "mean_abs_shap" in shap_imp[0]
 
 
 if __name__ == "__main__":
