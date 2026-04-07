@@ -21,7 +21,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import cross_val_score, KFold
+from sklearn.model_selection import TimeSeriesSplit
 from catboost import CatBoostRegressor
 
 
@@ -68,6 +68,30 @@ def build_model(random_seed: int, cfg: CatBoostConfig | None = None) -> CatBoost
     )
 
 
+def prepare_catboost_array(X: np.ndarray, cat_features: list[int]) -> np.ndarray:
+    """
+    Convert a numpy feature matrix for use with CatBoost categorical features.
+
+    CatBoost requires that when cat_features are specified, the data is NOT a
+    plain float array: categorical columns must be integer or string values.
+    This function converts the array to object dtype and casts categorical
+    columns to Python int so CatBoost can accept them.
+
+    Args:
+        X: Feature matrix (may be float64)
+        cat_features: List of column indices that are categorical
+
+    Returns:
+        Object-dtype array with categorical columns stored as Python ints
+    """
+    if not cat_features:
+        return X
+    X_obj = X.astype(object)
+    for idx in cat_features:
+        X_obj[:, idx] = [int(v) for v in X_obj[:, idx]]
+    return X_obj
+
+
 def cross_validate_r2(
     X: np.ndarray,
     y: np.ndarray,
@@ -89,11 +113,12 @@ def cross_validate_r2(
         List of R² scores for each fold
     """
     model = build_model(random_seed)
-    kf = KFold(n_splits=folds, shuffle=False)
+    tss = TimeSeriesSplit(n_splits=folds)
 
     scores = []
-    for train_idx, val_idx in kf.split(X):
-        X_train, X_val = X[train_idx], X[val_idx]
+    for train_idx, val_idx in tss.split(X):
+        X_train = prepare_catboost_array(X[train_idx], cat_features)
+        X_val = prepare_catboost_array(X[val_idx], cat_features)
         y_train, y_val = y[train_idx], y[val_idx]
 
         model.fit(
@@ -104,7 +129,7 @@ def cross_validate_r2(
             early_stopping_rounds=50,
             verbose=False,
         )
-        
+
         score = model.score(X_val, y_val)
         scores.append(score)
 

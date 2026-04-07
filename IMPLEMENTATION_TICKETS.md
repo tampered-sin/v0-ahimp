@@ -421,7 +421,7 @@ Initialize CrewAI framework and configure OpenAI GPT-4 integration for AI agent 
 
 **Environment Setup:**
 ```bash
-OPENAI_API_KEY=sk-...
+OPENAI_API_KEY=YOUR_API_KEY_HERE
 GPT_MODEL=gpt-4-turbo
 CREW_LOG_LEVEL=INFO
 ```

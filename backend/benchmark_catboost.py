@@ -73,8 +73,11 @@ def benchmark_models():
             baseline_start = time.time()
             baseline_results = train_baseline_models(features_df)
             baseline_time = time.time() - baseline_start
-            baseline_r2 = baseline_results.get('xgb_r2', 0.0)
-            print(f"  ✓ Baseline XGBoost R²: {baseline_r2:.4f}")
+            baseline_r2 = baseline_results.get('xgb', {}).get('r2') or baseline_results.get('lgbm', {}).get('r2', 0.0)
+            baseline_mae = baseline_results.get('xgb', {}).get('mae') or baseline_results.get('lgbm', {}).get('mae')
+            print(f"  ✓ Baseline R²: {baseline_r2:.4f}")
+            if baseline_mae is not None:
+                print(f"  ✓ Baseline MAE: {baseline_mae:.4f}")
             print(f"  ✓ Baseline training time: {baseline_time:.2f}s\n")
         except Exception as e:
             print(f"  ⚠ Baseline training skipped: {e}\n")
@@ -92,16 +95,29 @@ def benchmark_models():
         print(f"  ✓ CV time: {catboost_cv_time:.2f}s\n")
         
         # === FULL MODEL TRAINING ===
-        print("Step 4: Full CatBoost model training (with early stopping)...")
-        
+        print("Step 4: Full CatBoost model training (with early stopping on validation split)...")
+
+        # Hold out last 20% as a temporal validation set for early stopping
+        split_idx = int(len(X) * 0.8)
+        X_train_full, X_val_full = X[:split_idx], X[split_idx:]
+        y_train_full, y_val_full = y[:split_idx], y[split_idx:]
+
         catboost_train_start = time.time()
         catboost_model = build_catboost_model(random_seed=42)
-        catboost_model.fit(X, y, verbose=False)
+        catboost_model.fit(
+            X_train_full,
+            y_train_full,
+            eval_set=[(X_val_full, y_val_full)],
+            early_stopping_rounds=50,
+            verbose=False,
+        )
         catboost_train_time = time.time() - catboost_train_start
-        catboost_r2 = catboost_model.score(X, y)
-        
+        catboost_r2 = catboost_model.score(X_val_full, y_val_full)
+        best_iteration = catboost_model.get_best_iteration()
+
         print(f"  ✓ CatBoost training time: {catboost_train_time:.2f}s")
-        print(f"  ✓ CatBoost training R²: {catboost_r2:.4f}\n")
+        print(f"  ✓ CatBoost best iteration: {best_iteration}")
+        print(f"  ✓ CatBoost validation R²: {catboost_r2:.4f}\n")
         
         # === INFERENCE BENCHMARK ===
         print("Step 5: Inference time benchmark (1,000 iterations)...")
@@ -125,8 +141,8 @@ def benchmark_models():
         
         # === MAE CALCULATION ===
         print("Step 6: Mean Absolute Error calculation...")
-        predictions = catboost_model.predict(X)
-        mae = np.mean(np.abs(predictions - y))
+        predictions = catboost_model.predict(X_val_full)
+        mae = np.mean(np.abs(predictions - y_val_full))
         print(f"  ✓ CatBoost MAE: {mae:.2f}\n")
         
         # === RESULTS SUMMARY ===
@@ -141,7 +157,7 @@ def benchmark_models():
             "data_loading_time_sec": round(load_time, 4),
             
             "baseline": {
-                "model": "XGBoost",
+                "model": "LightGBM",
                 "training_r2": round(float(baseline_r2), 4) if baseline_r2 else None,
                 "training_time_sec": round(baseline_time, 4) if baseline_time else None,
             } if baseline_r2 else None,
@@ -158,6 +174,7 @@ def benchmark_models():
                 "p95_inference_ms": round(catboost_p95_inf, 4),
                 "p99_inference_ms": round(catboost_p99_inf, 4),
                 "early_stopping_enabled": True,
+                "early_stopping_best_iteration": best_iteration,
             },
             
             "comparison_to_baseline": {

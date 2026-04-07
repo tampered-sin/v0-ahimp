@@ -21,12 +21,18 @@ from models.catboost_model import (
     load_model as load_catboost_model,
     save_model as save_catboost_model,
     get_feature_importance,
+    prepare_catboost_array,
 )
-from models.lightgbm_model import (
-    build_model as build_lgbm_model,
-    cross_validate_r2 as lgbm_cv_r2,
-    load_model as load_lgbm_model,
-)
+try:
+    from models.lightgbm_model import (
+        build_model as build_lgbm_model,
+        cross_validate_r2 as lgbm_cv_r2,
+        load_model as load_lgbm_model,
+    )
+except ModuleNotFoundError:
+    build_lgbm_model = None
+    lgbm_cv_r2 = None
+    load_lgbm_model = None
 
 FEATURE_COLS = [
     "rolling_7d", "rolling_30d", "lag_7", "lag_14",
@@ -62,12 +68,15 @@ def build_demand_features_with_categorical(feat_df: pd.DataFrame) -> tuple:
         if col not in feat_df.columns:
             raise ValueError(f"Missing required column: {col}")
 
-    # Check if we havecategorical columns
-    has_categorical = all(col in feat_df.columns for col in CATEGORICAL_FEATURE_NAMES)
+    # Use any configured categorical columns that are actually present
+    present_categorical_cols = [
+        col for col in CATEGORICAL_FEATURE_NAMES if col in feat_df.columns
+    ]
+    has_categorical = len(present_categorical_cols) > 0
 
     if has_categorical:
-        # Include categorical features
-        all_feature_cols = FEATURE_COLS + CATEGORICAL_FEATURE_NAMES
+        # Include only categorical features available in the engineered dataset
+        all_feature_cols = FEATURE_COLS + present_categorical_cols
         feature_matrix = feat_df[all_feature_cols].values
 
         # Identify categorical feature indices (they come at the end)
@@ -100,16 +109,23 @@ def train_catboost(feat_df: pd.DataFrame) -> dict:
     # Build features with categorical support
     X, y, cat_indices, feature_names = build_demand_features_with_categorical(feat_df)
 
-    # Handle categorical features by encoding (CatBoost can handle integer encoding)
+    # Handle categorical features by encoding (CatBoost requires integer encoding + object dtype)
+    cat_encoding: dict = {}
     if cat_indices:
         for idx in cat_indices:
+            col_name = feature_names[idx]
             unique_vals = np.unique(X[:, idx])
             val_to_idx = {val: i for i, val in enumerate(unique_vals)}
-            X[:, idx] = np.array([val_to_idx[val] for val in X[:, idx]])
+            cat_encoding[col_name] = val_to_idx
+            X[:, idx] = np.array([val_to_idx[val] for val in X[:, idx]], dtype=object)
 
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=RANDOM_SEED, shuffle=False
     )
+
+    # Prepare arrays with correct types for CatBoost categorical handling
+    X_train = prepare_catboost_array(X_train, cat_indices)
+    X_test = prepare_catboost_array(X_test, cat_indices)
 
     # --- CatBoost Training ---
     catboost = build_catboost_model(RANDOM_SEED)
@@ -135,10 +151,12 @@ def train_catboost(feat_df: pd.DataFrame) -> dict:
     importance = get_feature_importance(catboost, feature_names, CATEGORICAL_FEATURE_NAMES)
 
     # Compare with LightGBM baseline
-    lgbm = build_lgbm_model(RANDOM_SEED)
-    lgbm.fit(X_train, y_train)
-    y_pred_lgbm = lgbm.predict(X_test)
-    r2_lgbm = float(r2_score(y_test, y_pred_lgbm))
+    r2_lgbm = None
+    if build_lgbm_model is not None:
+        lgbm = build_lgbm_model(RANDOM_SEED)
+        lgbm.fit(X_train, y_train)
+        y_pred_lgbm = lgbm.predict(X_test)
+        r2_lgbm = float(r2_score(y_test, y_pred_lgbm))
 
     meta = {
         "catboost": {
@@ -147,25 +165,27 @@ def train_catboost(feat_df: pd.DataFrame) -> dict:
             "r2": r2_catboost,
             "cv_r2_scores": cv_r2_scores,
             "cv_r2_mean": float(np.mean(cv_r2_scores)) if cv_r2_scores else None,
-            "categorical_features": CATEGORICAL_FEATURE_NAMES,
+            "categorical_features": list(feature_names[len(FEATURE_COLS):]) if cat_indices else [],
             "cat_feature_count": len(cat_indices),
         },
         "lgbm_baseline": {
             "r2": r2_lgbm,
         },
         "improvement": {
-            "r2_delta": r2_catboost - r2_lgbm,
+            "r2_delta": (r2_catboost - r2_lgbm) if r2_lgbm is not None else None,
             "mae_vs_baseline": mae_catboost,
         },
         "feature_importance": importance,
         "feature_cols": FEATURE_COLS,
-        "categorical_cols": CATEGORICAL_FEATURE_NAMES,
+        "categorical_cols": list(feature_names[len(FEATURE_COLS):]) if cat_indices else [],
+        "cat_encoding": cat_encoding,
     }
 
     with open(PKL_CATBOOST_META, "wb") as f:
         pickle.dump(meta, f)
 
-    print(f"[CatBoost] MAE={mae_catboost:.2f}  RMSE={rmse_catboost:.2f}  R²={r2_catboost:.3f}  (vs LightGBM R²={r2_lgbm:.3f})")
+    lgbm_r2_str = f"{r2_lgbm:.3f}" if r2_lgbm is not None else "N/A"
+    print(f"[CatBoost] MAE={mae_catboost:.2f}  RMSE={rmse_catboost:.2f}  R²={r2_catboost:.3f}  (vs LightGBM R²={lgbm_r2_str})")
     return meta
 
 
@@ -207,6 +227,18 @@ def predict_forecast_catboost(feat_df: pd.DataFrame, item_id: int) -> dict:
     forecast = []
     today = pd.Timestamp.today().normalize()
 
+    # Determine which categorical columns were used at training time
+    trained_cat_cols: list[str] = meta.get("categorical_cols", [])
+    cat_encoding: dict = meta.get("cat_encoding", {})
+
+    # Build static categorical feature values for this item (constant across forecast horizon)
+    cat_values: list = []
+    for col in trained_cat_cols:
+        raw_val = item_df[col].iloc[0] if col in item_df.columns else 0
+        encoding = cat_encoding.get(col, {})
+        # Map to the integer used during training; fall back to 0 for unseen values
+        cat_values.append(encoding.get(raw_val, 0))
+
     for day in range(FORECAST_HORIZON):
         arr = np.array(history)
         r7 = arr[-7:].mean() if len(arr) >= 7 else arr.mean()
@@ -217,13 +249,14 @@ def predict_forecast_catboost(feat_df: pd.DataFrame, item_id: int) -> dict:
         target_dt = today + pd.Timedelta(days=day + 1)
         stock_ratio = r7 / max(1, item_df["reorder_point"].iloc[0])
 
-        features = np.array([[
+        numeric_features = [
             r7, r30, l7, l14,
             target_dt.dayofweek, target_dt.month,
             vel, stock_ratio,
             item_df["avg_lead_time_days"].iloc[0],
             item_df["reliability_score"].iloc[0],
-        ]])
+        ]
+        features = np.array([numeric_features + cat_values])
 
         pred = float(max(0, catboost.predict(features)[0]))
         forecast.append({
