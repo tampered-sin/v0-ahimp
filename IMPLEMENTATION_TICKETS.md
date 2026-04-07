@@ -120,7 +120,7 @@ Implement CatBoost model to handle categorical features (supplier_id, department
 ## TICKET: TASK-103
 **Title:** Implement LSTM/GRU Time-Series Model for Seasonal Forecasting
 **Type:** Task
-**Status:** Not Started
+**Status:** In Progress
 **Priority:** MEDIUM
 **Story Points:** 21
 **Sprint:** Sprint 1-2
@@ -131,8 +131,8 @@ Implement CatBoost model to handle categorical features (supplier_id, department
 Build LSTM/GRU neural network to capture temporal patterns, seasonal cycles, and non-linear relationships in consumption data for 14-day demand forecasting.
 
 **Acceptance Criteria:**
-- [ ] TensorFlow 2.13+ and Keras installed
-- [ ] `backend/models/lstm_model.py` created
+- [x] TensorFlow 2.13+ and Keras installed
+- [x] `backend/models/lstm_model.py` created
 - [ ] Model architecture:
   - [ ] Input shape: (14-day lookback, 10 features)
   - [ ] LSTM layer: 64 units + 0.2 dropout
@@ -152,9 +152,9 @@ Build LSTM/GRU neural network to capture temporal patterns, seasonal cycles, and
 - [ ] Inference time: <100ms per batch
 
 **Tasks:**
-1. Install TensorFlow/Keras: `pip install tensorflow==2.13.0`
-2. Create `backend/data/sequence_generator.py`
-3. Create `backend/models/lstm_model.py`
+1. Install TensorFlow/Keras: `pip install tensorflow==2.16.1`
+2. Create `backend/data/sequence_generator.py` ✅
+3. Create `backend/models/lstm_model.py` ✅
 4. Implement build_lstm_model() function
 5. Add data preprocessing pipeline
 6. Implement training loop with callbacks

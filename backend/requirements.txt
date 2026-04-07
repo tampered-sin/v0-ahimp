@@ -8,6 +8,7 @@ lightgbm==4.5.0
 catboost==1.2.0
 statsmodels==0.14.4
 shap==0.46.0
+tensorflow==2.16.1
 sqlalchemy==2.0.36
 python-dotenv==1.0.1
 psycopg2-binary==2.9.9
