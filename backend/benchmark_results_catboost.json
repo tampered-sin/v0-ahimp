@@ -1,0 +1,33 @@
+{
+  "timestamp": "2026-04-07T13:15:30.941250",
+  "data_samples": 17544,
+  "features": 10,
+  "data_loading_time_sec": 0.7648,
+  "baseline": null,
+  "catboost": {
+    "cv_r2_mean": 0.9057,
+    "cv_r2_std": 0.1403,
+    "cv_r2_scores": [
+      0.988,
+      0.9372,
+      0.9869,
+      0.6279,
+      0.9885
+    ],
+    "cv_time_sec": 6.3027,
+    "training_time_sec": 2.6448,
+    "training_r2": 0.9998,
+    "mae": 1.7402,
+    "avg_inference_ms": 0.6024,
+    "p95_inference_ms": 0.8167,
+    "p99_inference_ms": 0.9657,
+    "early_stopping_enabled": true
+  },
+  "comparison_to_baseline": null,
+  "acceptance_criteria": {
+    "training_time_under_3min": true,
+    "inference_time_under_50ms": true,
+    "r2_score_above_0_96": true,
+    "mae_under_7": true
+  }
+}

@@ -76,7 +76,7 @@ def cross_validate_r2(
     folds: int = 5,
 ) -> list[float]:
     """
-    Run k-fold cross-validation with categorical features.
+    Run k-fold cross-validation with categorical features and early stopping.
 
     Args:
         X: Feature matrix
@@ -100,10 +100,13 @@ def cross_validate_r2(
             X_train,
             y_train,
             cat_features=cat_features,
+            eval_set=[(X_val, y_val)],
+            early_stopping_rounds=50,
             verbose=False,
         )
+        
         score = model.score(X_val, y_val)
-        scores.append(float(score))
+        scores.append(score)
 
     return scores
 
