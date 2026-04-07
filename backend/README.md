@@ -11,6 +11,7 @@ FastAPI service providing real ML-powered predictions for the AHIMP hospital inv
 | Demand Forecast | **LightGBM** + Linear Regression + ARIMA |
 | Stockout Risk | **Random Forest** Classifier |
 | Expiry Risk | **Logistic Regression** |
+| Anomaly Detection | Isolation Forest + rule-based RED alerts |
 
 ## Quick Start with Docker (Recommended)
 
@@ -62,6 +63,9 @@ On first boot the server will automatically:
 | GET | `/api/demand-forecast?item_id=<n>` | 14-day LightGBM demand forecast |
 | GET | `/api/stockout-risk` | Random Forest stockout probability for all items |
 | GET | `/api/expiry-risk` | Logistic Regression expiry risk + ROC curve |
+| GET | `/api/anomalies/recent` | Recent anomaly detection alerts |
+| GET | `/api/alerts/recent` | Dashboard alert feed (email/SMS/log events) |
+| POST | `/api/consumption/ingest` | Ingest consumption records + anomaly scan |
 | GET | `/api/cost-savings` | Estimated savings from ML-driven decisions |
 | GET | `/api/model-overview` | LightGBM metrics + SHAP feature importance + pipeline |
 | GET | `/api/model-comparison` | Compare LightGBM vs Linear Regression vs ARIMA |
@@ -83,7 +87,8 @@ backend/
 │   └── seed.py              ← Synthetic data generator
 │
 ├── data/
-│   └── feature_engineering.py  ← Rolling avg, lag, seasonality features
+│   ├── feature_engineering.py  ← Rolling avg, lag, seasonality features
+│   └── sequence_generator.py   ← Lookback/horizon sequence builder for LSTM/GRU
 │
 ├── models/
 │   ├── demand_model.py      ← LightGBM + LR + ARIMA
@@ -96,6 +101,10 @@ backend/
     ├── demand.py
     ├── stockout.py
     ├── expiry.py
+    ├── anomalies.py
+    ├── consumption.py
+    ├── ensemble.py
+    ├── alerts.py
     ├── cost_savings.py
     └── overview.py
 ```

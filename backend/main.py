@@ -22,8 +22,8 @@ from data.feature_engineering import (
     build_stockout_features,
     build_expiry_features,
 )
-from models import demand_model, stockout_model, expiry_model
-from api import demand, stockout, expiry, cost_savings, overview
+from models import demand_model, stockout_model, expiry_model, anomaly_detector
+from api import demand, stockout, expiry, cost_savings, overview, anomalies, consumption, ensemble, alerts
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ahimp")
@@ -61,6 +61,16 @@ async def lifespan(app: FastAPI):
         else:
             logger.info("  ✅ Demand model already trained (loaded from pkl)")
 
+        try:
+            from models import lstm_model
+
+            if not lstm_model.is_trained(model_type="lstm"):
+                lstm_model.train(demand_feat, model_type="lstm", epochs=10, batch_size=128)
+            else:
+                logger.info("  ✅ LSTM model already trained")
+        except Exception as exc:
+            logger.warning("  ⚠️ LSTM training skipped: %s", exc)
+
         if not stockout_model.is_trained():
             stockout_model.train(stockout_feat)
         else:
@@ -70,6 +80,11 @@ async def lifespan(app: FastAPI):
             expiry_model.train(expiry_feat)
         else:
             logger.info("  ✅ Expiry model already trained")
+
+        if not anomaly_detector.is_trained():
+            anomaly_detector.train(raw_df)
+        else:
+            logger.info("  ✅ Anomaly detector already trained")
 
     except Exception as e:
         logger.error(f"Training failed: {e}", exc_info=True)
@@ -102,6 +117,10 @@ app.include_router(stockout.router,     prefix="/api", tags=["Stockout Risk"])
 app.include_router(expiry.router,       prefix="/api", tags=["Expiry Risk"])
 app.include_router(cost_savings.router, prefix="/api", tags=["Cost Savings"])
 app.include_router(overview.router,     prefix="/api", tags=["Model Overview"])
+app.include_router(anomalies.router,    prefix="/api", tags=["Anomaly Detection"])
+app.include_router(consumption.router,  prefix="/api", tags=["Consumption Ingestion"])
+app.include_router(ensemble.router,     prefix="/api", tags=["Ensemble Forecast"])
+app.include_router(alerts.router,       prefix="/api", tags=["Alerts"])
 
 
 @app.get("/api/health", tags=["Health"])
