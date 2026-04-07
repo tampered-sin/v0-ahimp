@@ -12,7 +12,7 @@
 ## TICKET: TASK-101
 **Title:** Migrate XGBoost to LightGBM for Demand Forecasting
 **Type:** Task
-**Status:** In Progress
+**Status:** Completed
 **Priority:** HIGH
 **Story Points:** 13
 **Sprint:** Sprint 1
@@ -29,13 +29,13 @@ Replace current XGBoost demand model with LightGBM to achieve 3-5x faster traini
   - [x] Feature importance calculations
   - [x] Cross-validation pipeline (5-fold)
   - [x] Model persistence (pkl format)
-- [ ] Performance benchmarks recorded:
-  - [ ] Training time: <5 minutes for 7.3M records
-  - [ ] Inference time: <50ms per item
-  - [ ] R² score: ≥0.97
+- [x] Performance benchmarks recorded:
+  - [x] Training time: <5 minutes for 7.3M records
+  - [x] Inference time: <50ms per item
+  - [x] R² score: ≥0.97
 - [x] Backward compatible with existing API (`/api/demand-forecast`)
-- [ ] Unit tests passing (95%+ code coverage)
-- [ ] Documentation updated in README
+- [x] Unit tests passing (95%+ code coverage)
+- [x] Documentation updated in README
 
 **Tasks:**
 1. Install LightGBM: `pip install lightgbm==4.0.0`
