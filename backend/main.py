@@ -23,7 +23,23 @@ from data.feature_engineering import (
     build_expiry_features,
 )
 from models import demand_model, stockout_model, expiry_model, anomaly_detector
-from api import demand, stockout, expiry, cost_savings, overview, anomalies, consumption, ensemble, alerts
+from api import (
+    demand,
+    stockout,
+    expiry,
+    cost_savings,
+    overview,
+    anomalies,
+    consumption,
+    ensemble,
+    alerts,
+    explain,
+    agents,
+    suppliers,
+    supply_chain,
+    purchase_orders,
+    deliveries,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ahimp")
@@ -121,6 +137,12 @@ app.include_router(anomalies.router,    prefix="/api", tags=["Anomaly Detection"
 app.include_router(consumption.router,  prefix="/api", tags=["Consumption Ingestion"])
 app.include_router(ensemble.router,     prefix="/api", tags=["Ensemble Forecast"])
 app.include_router(alerts.router,       prefix="/api", tags=["Alerts"])
+app.include_router(explain.router,      prefix="/api", tags=["Explainability"])
+app.include_router(agents.router,       prefix="/api", tags=["AI Agents"])
+app.include_router(suppliers.router,    prefix="/api", tags=["Suppliers"])
+app.include_router(supply_chain.router, prefix="/api", tags=["Supply Chain Agent"])
+app.include_router(purchase_orders.router, prefix="/api", tags=["Purchase Orders"])
+app.include_router(deliveries.router, prefix="/api", tags=["Delivery Tracking"])
 
 
 @app.get("/api/health", tags=["Health"])

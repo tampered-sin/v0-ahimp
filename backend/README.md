@@ -54,6 +54,28 @@ On first boot the server will automatically:
 3. Train all 3 ML models (takes ~5-10 minutes for 7.3M records)
 4. Serve the API at **http://localhost:8000**
 
+## Local Ollama Setup for Agents
+
+```bash
+# Install and start Ollama (https://ollama.com/download)
+ollama serve
+
+# Pull the local model used by CrewAI agents
+ollama pull llama3
+
+# Confirm model availability
+ollama list
+```
+
+Set these environment variables before launching the backend:
+
+```bash
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=ollama/llama3
+CREW_LLM_PROVIDER=ollama
+CREW_LOG_LEVEL=INFO
+```
+
 ## API Endpoints
 
 | Method | Endpoint | Description |
@@ -65,6 +87,25 @@ On first boot the server will automatically:
 | GET | `/api/expiry-risk` | Logistic Regression expiry risk + ROC curve |
 | GET | `/api/anomalies/recent` | Recent anomaly detection alerts |
 | GET | `/api/alerts/recent` | Dashboard alert feed (email/SMS/log events) |
+| GET | `/api/explain/item/{item_id}` | SHAP + LIME explanation for an item forecast |
+| GET | `/api/explain/prediction/{prediction_id}` | SHAP + LIME explanation for a prediction reference |
+| POST | `/api/agents/data-ingestion` | Trigger data ingestion agent (records/csv/api) |
+| GET | `/api/agents/data-ingestion/status/{job_id}` | Check async ingestion job status |
+| GET | `/api/admin/ingestion-audit` | List quarantined ingestion records for review |
+| POST | `/api/admin/ingestion-audit/{audit_id}/review` | Approve/reject a quarantined ingestion record |
+| POST | `/api/suppliers/scoring` | Compute ranked supplier scores for an item |
+| POST | `/api/agents/supply-chain/at-risk` | Evaluate at-risk items and recommend suppliers |
+| POST | `/api/agents/supply-chain/auto-purchase` | Auto-create POs for at-risk items |
+| POST | `/api/purchase-orders` | Generate + validate + submit a purchase order |
+| GET | `/api/purchase-orders` | List purchase orders with tracking metadata |
+| GET | `/api/purchase-orders/{po_id}` | Get one purchase order with detail |
+| PATCH | `/api/purchase-orders/{po_id}/status` | Update purchase order status |
+| POST | `/api/purchase-orders/{po_id}/submit` | Submit via EDI/email/API |
+| GET | `/api/purchase-orders/{po_id}/tracking` | Track delivery status |
+| POST | `/api/deliveries/status` | Create delivery tracking record for a PO |
+| GET | `/api/deliveries/status` | Dashboard view of delivery statuses and alert levels |
+| PATCH | `/api/deliveries/status/{delivery_id}` | Manual delivery status update with transition checks |
+| POST | `/api/deliveries/sync` | Ingest supplier/barcode/manual delivery events |
 | POST | `/api/consumption/ingest` | Ingest consumption records + anomaly scan |
 | GET | `/api/cost-savings` | Estimated savings from ML-driven decisions |
 | GET | `/api/model-overview` | LightGBM metrics + SHAP feature importance + pipeline |
@@ -93,6 +134,7 @@ backend/
 ├── models/
 │   ├── demand_model.py      ← LightGBM + LR + ARIMA
 │   ├── lightgbm_model.py    ← LightGBM utilities (config, training, CV, persistence)
+│   ├── explainability.py     ← SHAP + LIME explainers (global/local/cached)
 │   ├── stockout_model.py    ← Random Forest
 │   ├── expiry_model.py      ← Logistic Regression
 │   └── pkl/                 ← Saved .pkl model files (auto-created)
@@ -105,8 +147,178 @@ backend/
     ├── consumption.py
     ├── ensemble.py
     ├── alerts.py
+    ├── explain.py
     ├── cost_savings.py
     └── overview.py
+```
+
+## Explainability Endpoints (Stakeholder Ready)
+
+The backend now exposes explainability payloads in JSON so dashboard clients can
+render transparent reasoning for pharmacists and clinicians.
+
+- `/api/explain/item/{item_id}` returns:
+    - Global SHAP feature ranking (mean absolute contribution)
+    - Local SHAP at the selected item snapshot
+    - Force-plot style payload (`base_value`, prediction, top feature contributions)
+    - LIME local feature weights for the same snapshot
+
+- `/api/explain/prediction/{prediction_id}` resolves a prediction reference to
+    the corresponding item context and returns the same SHAP/LIME structure.
+
+Implementation notes:
+- SHAP uses `TreeExplainer` with the LightGBM demand model.
+- LIME uses `LimeTabularExplainer` in regression mode.
+- Global/local explanations are cached to reduce recomputation.
+- If SHAP/LIME are unavailable, the API returns `available=false` plus a reason
+    instead of failing the request.
+
+## Agent Data Ingestion Formats
+
+`POST /api/agents/data-ingestion` supports:
+- `source_type=records`: inline JSON records list
+- `source_type=csv`: file path based CSV ingestion
+- `source_type=api`: external JSON/XML API source
+
+Required fields per record:
+- `item_id`
+- `quantity_used`
+- `usage_date`
+
+Optional fields:
+- `department_id` (defaults to `1`)
+- `patient_type` (defaults to `general`)
+- `batch_id`
+
+Sample inline payload:
+
+```json
+{
+    "source_type": "records",
+    "run_async": false,
+    "records": [
+        {
+            "item_id": 1,
+            "department_id": 1,
+            "quantity_used": 24,
+            "usage_date": "2026-01-10",
+            "patient_type": "general"
+        }
+    ]
+}
+```
+
+## Ingestion Audit Review API
+
+The ingestion pipeline writes invalid or anomalous rows into `consumption_record_audit`.
+Admin users can review those records through:
+
+- `GET /api/admin/ingestion-audit?status=PENDING&limit=100&offset=0`
+- `POST /api/admin/ingestion-audit/{audit_id}/review`
+
+Review payload:
+
+```json
+{
+    "action": "approve",
+    "reviewed_by": "pharmacist.user",
+    "comment": "validated against source report",
+    "create_consumption_record": true
+}
+```
+
+## Supplier Scoring API
+
+`POST /api/suppliers/scoring` computes a weighted supplier ranking using:
+
+- Reliability rating (30%)
+- On-time delivery proxy from lead-time history (25%)
+- Price competitiveness from batch purchase history (20%)
+- Distance penalty (15%, 0-500km scale)
+- Review sentiment score (10%, -1..1 normalized to 0-100)
+
+If `sentiment_score` is omitted and `review_text` is provided, the backend runs
+local NLP sentiment scoring with model:
+
+- `distilbert-base-uncased-finetuned-sst-2-english`
+
+Sample request:
+
+```json
+{
+    "item_id": 1,
+    "supplier_overrides": [
+        {"supplier_id": 1, "distance_km": 120, "sentiment_score": 0.6},
+        {"supplier_id": 2, "distance_km": 340, "review_text": "Delivery was late and packaging was poor"}
+    ]
+}
+```
+
+## Supply Chain Agent APIs
+
+Use these endpoints for stockout-driven supplier orchestration:
+
+- `POST /api/agents/supply-chain/at-risk`: evaluate at-risk items and return recommendations.
+- `POST /api/agents/supply-chain/auto-purchase`: evaluate + auto-create purchase orders.
+
+Sample request body:
+
+```json
+{
+    "risk_threshold": 0.7,
+    "max_items": 10,
+    "supplier_overrides": {
+        "1": [{"supplier_id": 1, "distance_km": 140, "review_text": "Reliable and fast"}]
+    }
+}
+```
+
+## Purchase Order API
+
+`POST /api/purchase-orders` request example:
+
+```json
+{
+    "item_id": 1,
+    "supplier_id": 2,
+    "risk_prob": 0.82,
+    "created_by": "procurement.bot",
+    "budget_threshold": 50000,
+    "discount_pct": 5,
+    "submission_method": "email"
+}
+```
+
+The workflow includes:
+- quantity calculation from reorder + safety stock + current inventory
+- budget approval check against threshold
+- duplicate-order prevention for the last 7 days
+- submission through `edi`, `email`, or `api`
+
+## Delivery Tracking API
+
+The delivery tracking workflow now supports:
+- state machine transitions: `PENDING -> CONFIRMED -> IN_TRANSIT -> DELIVERED`
+- exception states: `DELAYED`, `CANCELLED`
+- delay alert levels:
+  - yellow: 2 days before due date
+  - red: 1 day overdue
+  - escalation: 3 days overdue
+- event sources: `supplier_api`, `manual`, `barcode`
+
+Sample sync payload:
+
+```json
+{
+    "events": [
+        {
+            "tracking_reference": "PO-42",
+            "external_status_code": "IN_TRANSIT",
+            "source": "supplier_api",
+            "event_message": "Arrived at regional carrier hub"
+        }
+    ]
+}
 ```
 
 ## Running with PostgreSQL

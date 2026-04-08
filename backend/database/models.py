@@ -64,6 +64,61 @@ class PurchaseOrder(Base):
     status            = Column(String(50))
 
 
+class PurchaseOrderDetail(Base):
+    __tablename__ = "purchase_order_details"
+    detail_id            = Column(Integer, primary_key=True, autoincrement=True)
+    po_id                = Column(Integer, ForeignKey("purchase_orders.po_id"), nullable=False)
+    item_id              = Column(Integer, ForeignKey("items.item_id"), nullable=False)
+    quantity             = Column(Integer, nullable=False)
+    unit_price           = Column(Float, nullable=False)
+    discount_pct         = Column(Float, nullable=False, default=0.0)
+    total_cost           = Column(Float, nullable=False)
+    created_by           = Column(String(100), nullable=False, default="system")
+    approval_required    = Column(Boolean, nullable=False, default=False)
+    approval_status      = Column(String(30), nullable=False, default="APPROVED")
+    submission_method    = Column(String(30), nullable=True)
+    submission_status    = Column(String(30), nullable=True)
+    supplier_api_url     = Column(String(255), nullable=True)
+    submission_payload   = Column(String(4000), nullable=True)
+    tracking_reference   = Column(String(120), nullable=True)
+    created_at           = Column(DateTime, server_default=func.now())
+    updated_at           = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class DeliveryTracking(Base):
+    __tablename__ = "delivery_tracking"
+    delivery_id            = Column(Integer, primary_key=True, autoincrement=True)
+    po_id                  = Column(Integer, ForeignKey("purchase_orders.po_id"), nullable=False)
+    tracking_reference     = Column(String(120), nullable=False, unique=True)
+    carrier_name           = Column(String(80), nullable=True)
+    status                 = Column(String(30), nullable=False, default="PENDING")
+    expected_delivery      = Column(Date, nullable=True)
+    actual_delivery        = Column(Date, nullable=True)
+    last_event_code        = Column(String(50), nullable=True)
+    last_event_message     = Column(String(255), nullable=True)
+    last_event_at          = Column(DateTime, nullable=True)
+    delay_reason           = Column(String(255), nullable=True)
+    last_alert_level_sent  = Column(String(30), nullable=True)
+    alert_recipients       = Column(String(1000), nullable=True)
+    created_at             = Column(DateTime, server_default=func.now())
+    updated_at             = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class DeliveryEvent(Base):
+    __tablename__ = "delivery_events"
+    event_id              = Column(Integer, primary_key=True, autoincrement=True)
+    delivery_id           = Column(Integer, ForeignKey("delivery_tracking.delivery_id"), nullable=False)
+    source                = Column(String(30), nullable=False, default="manual")
+    external_status_code  = Column(String(50), nullable=False)
+    reason_code           = Column(String(50), nullable=True)
+    normalized_status     = Column(String(30), nullable=False)
+    event_message         = Column(String(255), nullable=True)
+    event_at              = Column(DateTime, nullable=False)
+    raw_payload           = Column(String(4000), nullable=True)
+    idempotency_key       = Column(String(255), nullable=False, unique=True)
+    created_at            = Column(DateTime, server_default=func.now())
+
+
 class GoodsReceipt(Base):
     __tablename__ = "goods_receipts"
     grn_id        = Column(Integer, primary_key=True, autoincrement=True)
@@ -81,6 +136,24 @@ class ConsumptionRecord(Base):
     quantity_used  = Column(Integer)
     usage_date     = Column(Date)
     patient_type   = Column(String(50))
+
+
+class ConsumptionRecordAudit(Base):
+    __tablename__ = "consumption_record_audit"
+    audit_id = Column(Integer, primary_key=True, autoincrement=True)
+    item_id = Column(Integer, ForeignKey("items.item_id"), nullable=True)
+    department_id = Column(Integer, ForeignKey("departments.department_id"), nullable=True)
+    quantity_used = Column(Integer, nullable=True)
+    usage_date = Column(Date, nullable=True)
+    z_score = Column(Float, nullable=True)
+    severity = Column(String(20), nullable=True)
+    reason = Column(String(255), nullable=False)
+    status = Column(String(20), nullable=False, default="PENDING")
+    source = Column(String(80), nullable=False, default="ingestion_agent")
+    raw_payload = Column(String(4000), nullable=True)
+    reviewed_by = Column(String(100), nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
 
 
 class Equipment(Base):

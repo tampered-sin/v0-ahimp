@@ -1,6 +1,6 @@
 -- =============================================================================
 -- AHIMP – AI-Based Hospital Inventory Management & Prediction
--- Full 14-Table PostgreSQL/SQLite Schema
+-- Full relational schema including ingestion audit quarantine table
 -- =============================================================================
 
 -- ─── 5.1 Master Tables ────────────────────────────────────────────────────────
@@ -60,11 +60,63 @@ CREATE TABLE IF NOT EXISTS Purchase_Orders (
     status            VARCHAR(50)
 );
 
+CREATE TABLE IF NOT EXISTS Purchase_Order_Details (
+    detail_id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    po_id              INTEGER NOT NULL REFERENCES Purchase_Orders(po_id),
+    item_id            INTEGER NOT NULL REFERENCES Items(item_id),
+    quantity           INTEGER NOT NULL,
+    unit_price         REAL NOT NULL,
+    discount_pct       REAL NOT NULL DEFAULT 0,
+    total_cost         REAL NOT NULL,
+    created_by         VARCHAR(100) NOT NULL DEFAULT 'system',
+    approval_required  BOOLEAN NOT NULL DEFAULT FALSE,
+    approval_status    VARCHAR(30) NOT NULL DEFAULT 'APPROVED',
+    submission_method  VARCHAR(30),
+    submission_status  VARCHAR(30),
+    supplier_api_url   VARCHAR(255),
+    submission_payload TEXT,
+    tracking_reference VARCHAR(120),
+    created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS Goods_Receipts (
     grn_id        INTEGER PRIMARY KEY AUTOINCREMENT,
     po_id         INTEGER REFERENCES Purchase_Orders(po_id),
     received_date DATE,
     verified_by   VARCHAR(100)
+);
+
+CREATE TABLE IF NOT EXISTS Delivery_Tracking (
+    delivery_id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    po_id                 INTEGER NOT NULL REFERENCES Purchase_Orders(po_id),
+    tracking_reference    VARCHAR(120) NOT NULL UNIQUE,
+    carrier_name          VARCHAR(80),
+    status                VARCHAR(30) NOT NULL DEFAULT 'PENDING',
+    expected_delivery     DATE,
+    actual_delivery       DATE,
+    last_event_code       VARCHAR(50),
+    last_event_message    VARCHAR(255),
+    last_event_at         TIMESTAMP,
+    delay_reason          VARCHAR(255),
+    last_alert_level_sent VARCHAR(30),
+    alert_recipients      VARCHAR(1000),
+    created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS Delivery_Events (
+    event_id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    delivery_id           INTEGER NOT NULL REFERENCES Delivery_Tracking(delivery_id),
+    source                VARCHAR(30) NOT NULL DEFAULT 'manual',
+    external_status_code  VARCHAR(50) NOT NULL,
+    reason_code           VARCHAR(50),
+    normalized_status     VARCHAR(30) NOT NULL,
+    event_message         VARCHAR(255),
+    event_at              TIMESTAMP NOT NULL,
+    raw_payload           TEXT,
+    idempotency_key       VARCHAR(255) NOT NULL UNIQUE,
+    created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ─── 5.4 Core ML Table ───────────────────────────────────────────────────────
@@ -77,6 +129,23 @@ CREATE TABLE IF NOT EXISTS Consumption_Records (
     quantity_used  INTEGER,
     usage_date     DATE,
     patient_type   VARCHAR(50)
+);
+
+CREATE TABLE IF NOT EXISTS Consumption_Record_Audit (
+    audit_id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id        INTEGER REFERENCES Items(item_id),
+    department_id  INTEGER REFERENCES Departments(department_id),
+    quantity_used  INTEGER,
+    usage_date     DATE,
+    z_score        REAL,
+    severity       VARCHAR(20),
+    reason         VARCHAR(255) NOT NULL,
+    status         VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+    source         VARCHAR(80) NOT NULL DEFAULT 'ingestion_agent',
+    raw_payload    TEXT,
+    reviewed_by    VARCHAR(100),
+    reviewed_at    TIMESTAMP,
+    created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ─── 5.5 Equipment Tables ────────────────────────────────────────────────────
