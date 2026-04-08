@@ -2,7 +2,7 @@
 from datetime import date, datetime
 from sqlalchemy import (
     Boolean, Column, Date, Float, ForeignKey,
-    Integer, String, DateTime, func,
+    Integer, String, DateTime, JSON, func,
 )
 from database.db import Base
 
@@ -85,6 +85,39 @@ class PurchaseOrderDetail(Base):
     updated_at           = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
+class PurchaseOrderApproval(Base):
+    __tablename__ = "purchase_order_approvals"
+    approval_id          = Column(Integer, primary_key=True, autoincrement=True)
+    po_id                = Column(Integer, ForeignKey("purchase_orders.po_id"), nullable=False, unique=True)
+    approval_level       = Column(String(30), nullable=False, default="AUTO")
+    approval_status      = Column(String(30), nullable=False, default="AUTO_APPROVED")
+    escalation_required  = Column(Boolean, nullable=False, default=False)
+    approval_reason      = Column(String(255), nullable=True)
+    score_breakdown      = Column(JSON, nullable=True)
+    rule_snapshot        = Column(JSON, nullable=True)
+    requested_at         = Column(DateTime, server_default=func.now())
+    due_at               = Column(DateTime, nullable=True)
+    decided_at           = Column(DateTime, nullable=True)
+    decided_by           = Column(String(120), nullable=True)
+    decision_comment     = Column(String(500), nullable=True)
+    notification_alert_id = Column(Integer, nullable=True)
+    created_at           = Column(DateTime, server_default=func.now())
+    updated_at           = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class PurchaseOrderApprovalAudit(Base):
+    __tablename__ = "purchase_order_approval_audit"
+    audit_id          = Column(Integer, primary_key=True, autoincrement=True)
+    po_id             = Column(Integer, ForeignKey("purchase_orders.po_id"), nullable=False)
+    event_type        = Column(String(40), nullable=False)
+    previous_status   = Column(String(30), nullable=True)
+    new_status        = Column(String(30), nullable=False)
+    actor             = Column(String(120), nullable=False, default="system")
+    comment           = Column(String(500), nullable=True)
+    metadata_json     = Column(JSON, nullable=True)
+    created_at        = Column(DateTime, server_default=func.now())
+
+
 class DeliveryTracking(Base):
     __tablename__ = "delivery_tracking"
     delivery_id            = Column(Integer, primary_key=True, autoincrement=True)
@@ -154,6 +187,19 @@ class ConsumptionRecordAudit(Base):
     reviewed_by = Column(String(100), nullable=True)
     reviewed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
+
+
+class AgentLog(Base):
+    __tablename__ = "agent_logs"
+    log_id = Column(Integer, primary_key=True, autoincrement=True)
+    agent_name = Column(String(120), nullable=False, index=True)
+    task_description = Column(String(255), nullable=False, index=True)
+    status = Column(String(20), nullable=False, index=True)
+    level = Column(String(10), nullable=False, default="INFO", index=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+    result = Column(JSON, nullable=True)
+    errors = Column(JSON, nullable=True)
 
 
 class Equipment(Base):

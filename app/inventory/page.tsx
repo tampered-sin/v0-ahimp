@@ -70,7 +70,7 @@ export default function InventoryPage() {
 }
 
 function InventoryContent() {
-  const { state, dispatch, getSupplierById, getDepartmentById, hasPermission } = useInventory()
+  const { state, dispatch, getDepartmentById, hasPermission } = useInventory()
   const { items } = state
 
   const [search, setSearch] = useState("")
@@ -407,7 +407,7 @@ interface InventoryFormProps {
 function InventoryForm({ defaultValues, onSubmit, suppliers, departments }: InventoryFormProps) {
   const [form, setForm] = useState<Partial<InventoryItem>>(
     defaultValues ?? {
-      id: `i${Date.now()}`,
+      id: "",
       name: "",
       category: Category.Medicines,
       sku: "",
@@ -428,12 +428,19 @@ function InventoryForm({ defaultValues, onSubmit, suppliers, departments }: Inve
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    const item = form as InventoryItem
-    // Auto-calculate status
-    if (item.quantity === 0) item.status = StockStatus.OutOfStock
-    else if (item.quantity <= item.reorderLevel) item.status = StockStatus.LowStock
-    else item.status = StockStatus.InStock
-    onSubmit(item)
+    const item = {
+      ...(form as InventoryItem),
+      id: form.id || `i-${crypto.randomUUID().slice(0, 8)}`,
+    }
+
+    const status =
+      item.quantity === 0
+        ? StockStatus.OutOfStock
+        : item.quantity <= item.reorderLevel
+          ? StockStatus.LowStock
+          : StockStatus.InStock
+
+    onSubmit({ ...item, status })
   }
 
   const update = (field: string, value: string | number) => {

@@ -39,6 +39,7 @@ from api import (
     supply_chain,
     purchase_orders,
     deliveries,
+    approval_queue,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -143,6 +144,7 @@ app.include_router(suppliers.router,    prefix="/api", tags=["Suppliers"])
 app.include_router(supply_chain.router, prefix="/api", tags=["Supply Chain Agent"])
 app.include_router(purchase_orders.router, prefix="/api", tags=["Purchase Orders"])
 app.include_router(deliveries.router, prefix="/api", tags=["Delivery Tracking"])
+app.include_router(approval_queue.router, prefix="/api", tags=["Approval Queue"])
 
 
 @app.get("/api/health", tags=["Health"])

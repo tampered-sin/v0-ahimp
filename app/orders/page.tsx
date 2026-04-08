@@ -6,11 +6,10 @@ import { OrderStatusBadge } from "@/components/stock-status-badge"
 import { useInventory } from "@/lib/inventory-context"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { OrderStatus, type PurchaseOrder, type PurchaseOrderItem } from "@/lib/types"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Badge } from "@/components/ui/badge"
 import {
   Table,
   TableBody,
@@ -81,7 +80,6 @@ function OrdersContent() {
   const totalValue = purchaseOrders.reduce((sum, o) => sum + o.totalAmount, 0)
   const pendingCount = purchaseOrders.filter((o) => o.status === OrderStatus.Pending).length
   const shippedCount = purchaseOrders.filter((o) => o.status === OrderStatus.Shipped).length
-  const deliveredCount = purchaseOrders.filter((o) => o.status === OrderStatus.Delivered).length
 
   const handleStatusChange = (orderId: string, newStatus: OrderStatus) => {
     const order = state.purchaseOrders.find((o) => o.id === orderId)
@@ -284,13 +282,17 @@ function OrderForm({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (orderItems.length === 0) return
+    const orderDate = new Date()
+    const expectedDelivery = new Date(orderDate)
+    expectedDelivery.setDate(orderDate.getDate() + 14)
+
     onSubmit({
-      id: `po${Date.now()}`,
+      id: `po-${crypto.randomUUID().slice(0, 8)}`,
       supplierId,
       items: orderItems,
       status: OrderStatus.Pending,
-      orderDate: new Date().toISOString().split("T")[0],
-      expectedDelivery: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+      orderDate: orderDate.toISOString().split("T")[0],
+      expectedDelivery: expectedDelivery.toISOString().split("T")[0],
       totalAmount: total,
     })
   }

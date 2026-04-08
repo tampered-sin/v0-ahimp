@@ -80,6 +80,42 @@ CREATE TABLE IF NOT EXISTS Purchase_Order_Details (
     updated_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS Purchase_Order_Approvals (
+    approval_id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    po_id                 INTEGER NOT NULL UNIQUE REFERENCES Purchase_Orders(po_id),
+    approval_level        VARCHAR(30) NOT NULL DEFAULT 'AUTO',
+    approval_status       VARCHAR(30) NOT NULL DEFAULT 'AUTO_APPROVED',
+    escalation_required   BOOLEAN NOT NULL DEFAULT FALSE,
+    approval_reason       VARCHAR(255),
+    score_breakdown       TEXT,
+    rule_snapshot         TEXT,
+    requested_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    due_at                TIMESTAMP,
+    decided_at            TIMESTAMP,
+    decided_by            VARCHAR(120),
+    decision_comment      VARCHAR(500),
+    notification_alert_id INTEGER,
+    created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS Purchase_Order_Approval_Audit (
+    audit_id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    po_id            INTEGER NOT NULL REFERENCES Purchase_Orders(po_id),
+    event_type       VARCHAR(40) NOT NULL,
+    previous_status  VARCHAR(30),
+    new_status       VARCHAR(30) NOT NULL,
+    actor            VARCHAR(120) NOT NULL DEFAULT 'system',
+    comment          VARCHAR(500),
+    metadata_json    TEXT,
+    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_po_approvals_status ON Purchase_Order_Approvals(approval_status);
+CREATE INDEX IF NOT EXISTS idx_po_approvals_level ON Purchase_Order_Approvals(approval_level);
+CREATE INDEX IF NOT EXISTS idx_po_approval_audit_po_id ON Purchase_Order_Approval_Audit(po_id);
+CREATE INDEX IF NOT EXISTS idx_po_approval_audit_event_type ON Purchase_Order_Approval_Audit(event_type);
+
 CREATE TABLE IF NOT EXISTS Goods_Receipts (
     grn_id        INTEGER PRIMARY KEY AUTOINCREMENT,
     po_id         INTEGER REFERENCES Purchase_Orders(po_id),
@@ -147,6 +183,22 @@ CREATE TABLE IF NOT EXISTS Consumption_Record_Audit (
     reviewed_at    TIMESTAMP,
     created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS Agent_Logs (
+    log_id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_name        VARCHAR(120) NOT NULL,
+    task_description  VARCHAR(255) NOT NULL,
+    status            VARCHAR(20) NOT NULL,
+    level             VARCHAR(10) NOT NULL DEFAULT 'INFO',
+    created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at      TIMESTAMP,
+    result            TEXT,
+    errors            TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_logs_agent ON Agent_Logs(agent_name);
+CREATE INDEX IF NOT EXISTS idx_agent_logs_status ON Agent_Logs(status);
+CREATE INDEX IF NOT EXISTS idx_agent_logs_task_description ON Agent_Logs(task_description);
 
 -- ─── 5.5 Equipment Tables ────────────────────────────────────────────────────
 

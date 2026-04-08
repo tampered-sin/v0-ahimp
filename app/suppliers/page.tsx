@@ -201,7 +201,7 @@ function SuppliersContent() {
 function SupplierForm({ defaultValues, onSubmit }: { defaultValues?: Supplier; onSubmit: (s: Supplier) => void }) {
   const [form, setForm] = useState<Partial<Supplier>>(
     defaultValues ?? {
-      id: `s${Date.now()}`,
+      id: "",
       name: "",
       contact: "",
       email: "",
@@ -216,7 +216,10 @@ function SupplierForm({ defaultValues, onSubmit }: { defaultValues?: Supplier; o
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    onSubmit(form as Supplier)
+    onSubmit({
+      ...(form as Supplier),
+      id: form.id || `s-${crypto.randomUUID().slice(0, 8)}`,
+    })
   }
 
   return (

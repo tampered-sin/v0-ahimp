@@ -48,6 +48,25 @@ pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
 ```
 
+## Run Frontend + Backend Together (Windows)
+
+From the project root, run:
+
+```bat
+run-dev.bat
+```
+
+This single launcher starts two PowerShell windows:
+
+- frontend (`pnpm dev` or fallback `npm run dev`) on `http://localhost:3000`
+- backend (`uvicorn main:app --reload --port 8000`) on `http://localhost:8000`
+
+`run-dev.bat` also starts Docker PostgreSQL (`postgres` service from `docker-compose.yml`) and waits for container health before launching backend.
+
+For launcher consistency, `run-dev.bat` sets backend `DATABASE_URL` to:
+
+`postgresql://ahimp_user:ahimp_secure_password_2024@localhost:5432/ahimp`
+
 On first boot the server will automatically:
 1. Create the SQLite database (`ahimp.db`)
 2. Seed all 14 tables with synthetic data (~20 years of daily consumption)
@@ -91,6 +110,10 @@ CREW_LOG_LEVEL=INFO
 | GET | `/api/explain/prediction/{prediction_id}` | SHAP + LIME explanation for a prediction reference |
 | POST | `/api/agents/data-ingestion` | Trigger data ingestion agent (records/csv/api) |
 | GET | `/api/agents/data-ingestion/status/{job_id}` | Check async ingestion job status |
+| GET | `/api/agents/supply-chain/at-risk` | Query at-risk supply-chain recommendations |
+| POST | `/api/agents/supply-chain/optimize` | Trigger supply-chain optimization with auto-purchase |
+| GET | `/api/agents/logs` | Read persistent execution logs (filter/search/export) |
+| GET | `/api/agents/dashboard` | Agent operations summary (jobs, audit queue, recent logs) |
 | GET | `/api/admin/ingestion-audit` | List quarantined ingestion records for review |
 | POST | `/api/admin/ingestion-audit/{audit_id}/review` | Approve/reject a quarantined ingestion record |
 | POST | `/api/suppliers/scoring` | Compute ranked supplier scores for an item |
@@ -102,6 +125,10 @@ CREW_LOG_LEVEL=INFO
 | PATCH | `/api/purchase-orders/{po_id}/status` | Update purchase order status |
 | POST | `/api/purchase-orders/{po_id}/submit` | Submit via EDI/email/API |
 | GET | `/api/purchase-orders/{po_id}/tracking` | Track delivery status |
+| GET | `/api/approval-queue` | List approval queue items with status/level filters |
+| GET | `/api/approval-queue/{po_id}` | Get approval queue detail and audit trail for one PO |
+| POST | `/api/approval-queue/{po_id}/decision` | Apply approve/reject decision with reviewer metadata |
+| POST | `/api/approval-queue/auto-timeout` | Process pending approvals past 24h timeout |
 | POST | `/api/deliveries/status` | Create delivery tracking record for a PO |
 | GET | `/api/deliveries/status` | Dashboard view of delivery statuses and alert levels |
 | PATCH | `/api/deliveries/status/{delivery_id}` | Manual delivery status update with transition checks |
@@ -208,6 +235,50 @@ Sample inline payload:
 }
 ```
 
+## Agent Management Security
+
+EPIC-4 management endpoints now include request throttling and API key auth support.
+
+- Rate limit: `100 requests/min` per identity and path (returns `429` when exceeded)
+- API key auth: set `AGENTS_API_KEY` and provide header `X-API-Key`
+- If `AGENTS_API_KEY` is not configured, auth is not enforced (dev-friendly default)
+
+Protected routes include:
+
+- `POST /api/agents/data-ingestion`
+- `GET /api/agents/data-ingestion/status/{job_id}`
+- `GET /api/agents/supply-chain/at-risk`
+- `POST /api/agents/supply-chain/optimize`
+- `GET /api/agents/logs`
+- `GET /api/agents/dashboard`
+- `GET /api/admin/ingestion-audit`
+- `POST /api/admin/ingestion-audit/{audit_id}/review`
+
+## Agent Logging & Audit Trail
+
+Agent execution logs are persisted in the `agent_logs` table with rolling retention.
+
+- Retention policy: 90-day rolling archive (old rows are purged during log writes)
+- Stored fields:
+    - `agent_name`, `task_description`
+    - `status`, `level`
+    - `created_at`, `completed_at`
+    - `result` (JSON)
+    - `errors` (JSON)
+
+`GET /api/agents/logs` supports:
+
+- Filters: `agent_name`, `status`, `level`
+- Full-text style search: `q` (matches task description and error payload)
+- Pagination: `limit`, `offset`
+- Export formats: `export=json|csv`
+
+Example:
+
+```bash
+curl "http://localhost:8000/api/agents/logs?agent_name=data-ingestion-agent&status=failed&q=timeout&export=json"
+```
+
 ## Ingestion Audit Review API
 
 The ingestion pipeline writes invalid or anomalous rows into `consumption_record_audit`.
@@ -272,6 +343,33 @@ Sample request body:
     }
 }
 ```
+
+## Purchase Order Approval Workflow
+
+Auto-generated purchase orders now run through explicit approval rules before supplier submission.
+
+Rule outcomes:
+
+- `AUTO_APPROVED` (level `AUTO`): low-value orders under 5000 with high supplier reliability.
+- `PENDING_REVIEW` (level `MANUAL`): orders at/above 5000, new suppliers, or low reliability.
+- `PENDING_MANAGER_REVIEW` (level `MANAGER`): orders above 50000 (escalation required).
+
+Decision and timeout behavior:
+
+- Approvers can approve/reject using `POST /api/approval-queue/{po_id}/decision`.
+- Manager-level approvals require `reviewer_role=manager|admin`.
+- Pending approvals are auto-approved after 24 hours using timeout processing.
+- Timeout processing is available via `POST /api/approval-queue/auto-timeout` and is also run on queue reads.
+
+Audit trail:
+
+- All approval transitions are recorded in `purchase_order_approval_audit`.
+- Queue detail responses return audit events for timeline views.
+
+Notification behavior:
+
+- Approval-required POs trigger alert notifications.
+- Decision events and timeout auto-approvals trigger follow-up alerts.
 
 ## Purchase Order API
 

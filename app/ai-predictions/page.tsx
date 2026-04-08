@@ -1,11 +1,10 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Progress } from "@/components/ui/progress"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -20,7 +19,6 @@ import {
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, ReferenceLine, Cell,
-  ScatterChart, Scatter, Legend,
 } from "recharts"
 import {
   getDemandItems, getDemandForecast, getStockoutRisk,
@@ -134,7 +132,7 @@ function DemandTab({ items, backendOnline }: { items: DemandItem[]; backendOnlin
 
   useEffect(() => {
     if (items.length > 0 && !selectedId) setSelectedId(items[0].id)
-  }, [items])
+  }, [items, selectedId])
 
   useEffect(() => {
     if (!selectedId || !backendOnline) return

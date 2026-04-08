@@ -46,7 +46,7 @@ export default function DashboardPage() {
 
 function DashboardContent() {
   const { state, getLowStockItems, getExpiringItems, getUnacknowledgedAlerts } = useInventory()
-  const { items, purchaseOrders, activityLogs, alerts } = state
+  const { items, purchaseOrders, activityLogs } = state
 
   // AI Insight state
   const [stockoutData, setStockoutData] = useState<StockoutRiskResponse | null>(null)

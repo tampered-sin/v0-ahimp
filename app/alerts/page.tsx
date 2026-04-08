@@ -5,7 +5,7 @@ import { DashboardLayout } from "@/components/dashboard-layout"
 import { SeverityBadge } from "@/components/stock-status-badge"
 import { useInventory } from "@/lib/inventory-context"
 import { formatDateTime, getDaysUntilExpiry, getAlertSeverityColor } from "@/lib/utils"
-import { AlertType, AlertSeverity, StockStatus, type Alert } from "@/lib/types"
+import { AlertType, AlertSeverity, type Alert } from "@/lib/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -22,7 +22,6 @@ import {
   Package,
   Search,
   ShieldAlert,
-  Trash2,
   XCircle,
 } from "lucide-react"
 
@@ -44,7 +43,7 @@ function AlertsContent() {
     getExpiredItems,
     getUnacknowledgedAlerts,
   } = useInventory()
-  const { alerts, items } = state
+  const { alerts } = state
 
   const [searchQuery, setSearchQuery] = useState("")
   const [severityFilter, setSeverityFilter] = useState<string>("all")

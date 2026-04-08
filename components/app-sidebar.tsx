@@ -14,6 +14,8 @@ import {
   ChevronUp,
   BrainCircuit,
   Database,
+  Bot,
+  ShieldCheck,
 } from "lucide-react"
 import { useInventory } from "@/lib/inventory-context"
 import {
@@ -44,9 +46,11 @@ const navItems = [
   { title: "Suppliers",      url: "/suppliers",        icon: Truck },
   { title: "Departments",    url: "/departments",      icon: Building2 },
   { title: "Purchase Orders",url: "/orders",           icon: ClipboardList },
+  { title: "Approval Queue", url: "/approval-queue",   icon: ShieldCheck },
   { title: "Alerts",         url: "/alerts",           icon: Bell },
   { title: "Reports",        url: "/reports",          icon: FileBarChart },
   { title: "AI Predictions", url: "/ai-predictions",   icon: BrainCircuit },
+  { title: "Agents",        url: "/agents",           icon: Bot },
   { title: "DB Schema",      url: "/schema",           icon: Database },
 ]
 

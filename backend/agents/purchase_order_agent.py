@@ -16,9 +16,11 @@ from database.models import (
     InventoryStock,
     Item,
     PurchaseOrder,
+    PurchaseOrderApproval,
     PurchaseOrderDetail,
     Supplier,
 )
+from database.po_approval import append_approval_audit, evaluate_po_approval_rule, upsert_po_approval
 from services.notifications import send_anomaly_alert
 
 
@@ -82,6 +84,14 @@ class PurchaseOrderAgent(BaseAgent):
         multiplier = 1.0 + max(0.0, float(risk_prob) - 0.7) * 2.0
         return max(1, int(round(base_qty * multiplier)))
 
+    def _supplier_is_new(self, db: Session, supplier_id: int) -> bool:
+        existing_count = (
+            db.query(func.count(PurchaseOrder.po_id))
+            .filter(PurchaseOrder.supplier_id == supplier_id)
+            .scalar()
+        )
+        return int(existing_count or 0) == 0
+
     def generate_po_tool(
         self,
         db: Session,
@@ -114,14 +124,26 @@ class PurchaseOrderAgent(BaseAgent):
             item_id=item_id,
             supplier_id=supplier_id,
             total_cost=total_cost,
-            budget_threshold=budget_threshold,
         )
 
         if not validation["valid"]:
             issues = ",".join(validation.get("issues", [])) or "validation_failed"
             raise ValueError(f"PO validation failed: {issues}")
 
-        po_status = "PENDING_APPROVAL" if validation["approval_required"] else "APPROVED"
+        supplier_reliability = float(supplier.reliability_score or 0.0)
+        is_new_supplier = self._supplier_is_new(db, supplier_id=supplier_id)
+        decision = evaluate_po_approval_rule(
+            total_cost=total_cost,
+            supplier_reliability=supplier_reliability,
+            is_new_supplier=is_new_supplier,
+        )
+
+        po_status_map = {
+            "AUTO_APPROVED": "APPROVED",
+            "PENDING_REVIEW": "PENDING_APPROVAL",
+            "PENDING_MANAGER_REVIEW": "PENDING_MANAGER_APPROVAL",
+        }
+        po_status = po_status_map.get(decision["approval_status"], "PENDING_APPROVAL")
         po = PurchaseOrder(
             supplier_id=supplier_id,
             order_date=date.today(),
@@ -139,8 +161,8 @@ class PurchaseOrderAgent(BaseAgent):
             discount_pct=discount,
             total_cost=total_cost,
             created_by=created_by,
-            approval_required=validation["approval_required"],
-            approval_status="PENDING" if validation["approval_required"] else "APPROVED",
+            approval_required=bool(decision["approval_required"]),
+            approval_status=str(decision["approval_status"]),
             submission_method=None,
             submission_status="PENDING",
             supplier_api_url=None,
@@ -148,20 +170,60 @@ class PurchaseOrderAgent(BaseAgent):
             tracking_reference=f"PO-{po.po_id}",
         )
         db.add(detail)
-        db.commit()
-        db.refresh(po)
-        db.refresh(detail)
 
-        if validation["approval_required"]:
-            send_anomaly_alert(
+        alert_id = None
+        if decision["approval_required"]:
+            severity = "RED" if decision["escalation_required"] else "YELLOW"
+            alert = send_anomaly_alert(
                 subject=f"Purchase Order Approval Required: PO-{po.po_id}",
                 body=(
                     f"PO {po.po_id} for item {item.item_name} requires approval.\n"
+                    f"Supplier: {supplier.supplier_name} (reliability={supplier_reliability:.2f})\n"
                     f"Total cost: {total_cost}\n"
-                    f"Budget threshold: {budget_threshold}"
+                    f"Reason: {decision['approval_reason']}\n"
+                    f"Escalation required: {decision['escalation_required']}"
                 ),
-                severity="YELLOW",
+                severity=severity,
             )
+            alert_id = alert.get("alert_id") if isinstance(alert, dict) else None
+
+        upsert_po_approval(
+            db,
+            po_id=int(po.po_id),
+            decision=decision,
+            notification_alert_id=alert_id,
+        )
+        append_approval_audit(
+            db,
+            po_id=int(po.po_id),
+            event_type="CREATED",
+            previous_status=None,
+            new_status=str(decision["approval_status"]),
+            actor=str(created_by),
+            comment=str(decision["approval_reason"]),
+            metadata_json={
+                "total_cost": total_cost,
+                "supplier_reliability": supplier_reliability,
+                "is_new_supplier": is_new_supplier,
+                "budget_threshold": budget_threshold,
+            },
+        )
+
+        if decision["approval_status"] == "AUTO_APPROVED":
+            append_approval_audit(
+                db,
+                po_id=int(po.po_id),
+                event_type="AUTO_APPROVED",
+                previous_status="AUTO_APPROVED",
+                new_status="AUTO_APPROVED",
+                actor="rules-engine",
+                comment="Auto-approved by threshold rules",
+                metadata_json=decision.get("score_breakdown"),
+            )
+
+        db.commit()
+        db.refresh(po)
+        db.refresh(detail)
 
         return {
             "po_id": int(po.po_id),
@@ -177,7 +239,11 @@ class PurchaseOrderAgent(BaseAgent):
             "order_date": str(po.order_date) if po.order_date else None,
             "expected_delivery": str(po.expected_delivery) if po.expected_delivery else None,
             "status": po.status,
-            "approval_required": validation["approval_required"],
+            "approval_required": decision["approval_required"],
+            "approval_level": decision["approval_level"],
+            "approval_status": decision["approval_status"],
+            "approval_reason": decision["approval_reason"],
+            "score_breakdown": decision["score_breakdown"],
             "validation": validation,
         }
 
@@ -187,7 +253,6 @@ class PurchaseOrderAgent(BaseAgent):
         item_id: int,
         supplier_id: int,
         total_cost: float,
-        budget_threshold: float,
     ) -> dict[str, Any]:
         supplier_exists = db.query(Supplier.supplier_id).filter(Supplier.supplier_id == supplier_id).first() is not None
         if not supplier_exists:
@@ -213,18 +278,15 @@ class PurchaseOrderAgent(BaseAgent):
             is not None
         )
 
-        approval_required = float(total_cost) > float(budget_threshold)
         issues: list[str] = []
         if duplicate:
             issues.append("duplicate_order_last_7_days")
-        if approval_required:
-            issues.append("budget_approval_required")
 
         return {
             "valid": not duplicate,
             "supplier_available": True,
             "duplicate_recent_order": duplicate,
-            "approval_required": approval_required,
+            "approval_required": False,
             "issues": issues,
         }
 
@@ -280,6 +342,17 @@ class PurchaseOrderAgent(BaseAgent):
         detail = db.query(PurchaseOrderDetail).filter(PurchaseOrderDetail.po_id == po_id).first()
         if detail is None:
             raise ValueError("Purchase order detail not found")
+
+        approval = db.query(PurchaseOrderApproval).filter(PurchaseOrderApproval.po_id == po_id).first()
+        pending_statuses = {"PENDING", "PENDING_REVIEW", "PENDING_MANAGER_REVIEW"}
+        if approval and approval.approval_status in pending_statuses:
+            raise ValueError("Purchase order approval is still pending")
+        if approval and approval.approval_status == "REJECTED":
+            raise ValueError("Rejected purchase order cannot be submitted")
+        if detail.approval_status in pending_statuses:
+            raise ValueError("Purchase order detail approval is still pending")
+        if detail.approval_status == "REJECTED":
+            raise ValueError("Rejected purchase order detail cannot be submitted")
 
         normalized_method = method.strip().lower()
         if normalized_method not in {"edi", "email", "api"}:
@@ -410,6 +483,22 @@ class PurchaseOrderAgent(BaseAgent):
             discount_pct=float(payload.get("discount_pct", 0.0)),
             budget_threshold=float(payload.get("budget_threshold", DEFAULT_BUDGET_THRESHOLD)),
         )
+
+        if generated.get("approval_required"):
+            return {
+                "generated": generated,
+                "submitted": {
+                    "po_id": int(generated["po_id"]),
+                    "submission_status": "PENDING_APPROVAL",
+                    "po_status": generated.get("status"),
+                },
+                "tracking": {
+                    "po_id": int(generated["po_id"]),
+                    "status": generated.get("status"),
+                    "delayed": False,
+                    "tracking_reference": f"PO-{generated['po_id']}",
+                },
+            }
 
         submitted = self.submit_po_tool(
             db,

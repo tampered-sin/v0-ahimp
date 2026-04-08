@@ -946,7 +946,7 @@ Implement delivery tracking to monitor PO status, detect delays, and alert procu
 
 ## EPIC-4: API Endpoints & Dashboard Integration
 **Epic ID:** EPIC-4
-**Status:** Not Started
+**Status:** In Progress
 **Priority:** HIGH
 **Timeline:** Week 5
 **Assignee:** Backend & Frontend Team
@@ -958,7 +958,7 @@ Implement delivery tracking to monitor PO status, detect delays, and alert procu
 ## TICKET: TASK-401
 **Title:** Create Agent Management API Endpoints
 **Type:** Task
-**Status:** Not Started
+**Status:** Completed ✓
 **Priority:** HIGH
 **Story Points:** 8
 **Sprint:** Sprint 5
@@ -969,30 +969,44 @@ Implement delivery tracking to monitor PO status, detect delays, and alert procu
 Build FastAPI endpoints for agent management, monitoring, and manual intervention.
 
 **Acceptance Criteria:**
-- [ ] `backend/api/agents.py` created
-- [ ] Endpoints:
-  - [ ] `POST /api/agents/data-ingestion` (trigger)
-  - [ ] `GET /api/agents/data-ingestion/status` (status)
-  - [ ] `GET /api/agents/supply-chain/at-risk` (at-risk items)
-  - [ ] `POST /api/agents/supply-chain/optimize` (trigger)
-  - [ ] `GET /api/agents/logs` (execution logs)
-  - [ ] `GET /api/agents/dashboard` (summary)
-- [ ] Error handling with proper HTTP codes
-- [ ] Request validation (Pydantic)
-- [ ] Rate limiting (100 req/min)
-- [ ] Authentication (API key or JWT)
+- [x] `backend/api/agents.py` created
+- [x] Endpoints:
+  - [x] `POST /api/agents/data-ingestion` (trigger)
+  - [x] `GET /api/agents/data-ingestion/status` (status)
+  - [x] `GET /api/agents/supply-chain/at-risk` (at-risk items)
+  - [x] `POST /api/agents/supply-chain/optimize` (trigger)
+  - [x] `GET /api/agents/logs` (execution logs)
+  - [x] `GET /api/agents/dashboard` (summary)
+- [x] Error handling with proper HTTP codes
+- [x] Request validation (Pydantic)
+- [x] Rate limiting (100 req/min)
+- [x] Authentication (API key or JWT)
 
 **Tasks:**
-1. Create `backend/api/agents.py`
-2. Implement data ingestion endpoints
-3. Implement supply chain endpoints
-4. Add logging endpoints
-5. Add dashboard summary endpoint
-6. Add error handling
-7. Add rate limiting middleware
-8. Add authentication middleware
-9. Write endpoint tests
-10. Update OpenAPI docs
+1. [x] Create `backend/api/agents.py`
+2. [x] Implement data ingestion endpoints
+3. [x] Implement supply chain endpoints
+4. [x] Add logging endpoints
+5. [x] Add dashboard summary endpoint
+6. [x] Add error handling
+7. [x] Add rate limiting middleware
+8. [x] Add authentication middleware
+9. [x] Write endpoint tests
+10. [x] Update OpenAPI docs
+
+**Current Progress Notes:**
+- Hardened agent-management routes in `backend/api/agents.py` with API key auth and request throttling (100 req/min).
+- Added management endpoints:
+  - `GET /api/agents/supply-chain/at-risk`
+  - `POST /api/agents/supply-chain/optimize`
+  - `GET /api/agents/logs`
+  - `GET /api/agents/dashboard`
+- Added execution event logging hooks for ingestion, supply-chain actions, and audit review operations.
+- Extended API tests in `backend/tests/test_api_agents.py` for:
+  - new routes
+  - API key auth behavior
+  - rate limit `429` behavior
+- Updated endpoint and security docs in `backend/README.md`.
 
 **Dependencies:**
 - TASK-201 (CrewAI)
@@ -1004,7 +1018,7 @@ Build FastAPI endpoints for agent management, monitoring, and manual interventio
 ## TICKET: TASK-402
 **Title:** Add Agent Execution Logging & Audit Trail
 **Type:** Task
-**Status:** Not Started
+**Status:** Completed ✓
 **Priority:** MEDIUM
 **Story Points:** 5
 **Sprint:** Sprint 5
@@ -1015,28 +1029,40 @@ Build FastAPI endpoints for agent management, monitoring, and manual interventio
 Implement comprehensive logging for all agent actions for audit, debugging, and regulatory compliance.
 
 **Acceptance Criteria:**
-- [ ] `backend/database/agent_logs` table created
-- [ ] Fields:
-  - [ ] agent_name, task_description
-  - [ ] status (running, success, failed)
-  - [ ] created_at, completed_at
-  - [ ] result (JSON)
-  - [ ] errors (JSON)
-- [ ] Log levels: DEBUG, INFO, WARNING, ERROR
-- [ ] Retention: 90 days rolling archive
-- [ ] Query interface: `/api/agents/logs`
-- [ ] Full text search on descriptions
+- [x] `backend/database/agent_logs` table created
+- [x] Fields:
+  - [x] agent_name, task_description
+  - [x] status (running, success, failed)
+  - [x] created_at, completed_at
+  - [x] result (JSON)
+  - [x] errors (JSON)
+- [x] Log levels: DEBUG, INFO, WARNING, ERROR
+- [x] Retention: 90 days rolling archive
+- [x] Query interface: `/api/agents/logs`
+- [x] Full text search on descriptions
 
 **Tasks:**
-1. Create `agent_logs` table
-2. Create logging utilities
-3. Add decorators for agent tracking
-4. Implement log persistence
-5. Add log archival
-6. Create log query API
-7. Add log export (CSV/JSON)
-8. Write tests
-9. Document log format
+1. [x] Create `agent_logs` table
+2. [x] Create logging utilities
+3. [x] Add decorators for agent tracking
+4. [x] Implement log persistence
+5. [x] Add log archival
+6. [x] Create log query API
+7. [x] Add log export (CSV/JSON)
+8. [x] Write tests
+9. [x] Document log format
+
+**Current Progress Notes:**
+- Added persistent logging model in `backend/database/models.py` as `AgentLog`.
+- Added SQL DDL and indexes in `backend/database/schema.sql` for `Agent_Logs`.
+- Added logging persistence/query module: `backend/database/agent_logs.py`.
+- Reworked `/api/agents/logs` to query persistent logs with filters, search (`q`), pagination, and CSV export.
+- Updated `/api/agents/dashboard` to include persistent log counts and preview.
+- Added retention cleanup (90-day rolling archive) executed during log writes.
+- Added tests:
+  - `backend/tests/test_agent_logs.py`
+  - updated `backend/tests/test_api_agents.py`
+- Updated docs in `backend/README.md`.
 
 **Dependencies:**
 - All agent tickets
@@ -1046,7 +1072,7 @@ Implement comprehensive logging for all agent actions for audit, debugging, and 
 ## TICKET: TASK-501
 **Title:** Build Agent Dashboard UI Components (Frontend)
 **Type:** Task
-**Status:** Not Started
+**Status:** Completed ✓
 **Priority:** HIGH
 **Story Points:** 21
 **Sprint:** Sprint 5
@@ -1057,33 +1083,50 @@ Implement comprehensive logging for all agent actions for audit, debugging, and 
 Create React components in Next.js for agent monitoring, at-risk items, supplier recommendations, and PO management.
 
 **Acceptance Criteria:**
-- [ ] Create new page: `/agents`
+- [x] Create new page: `/agents`
 - [ ] Components:
-  - [ ] AgentDashboard (main hub)
-  - [ ] DataIngestionStatus (recent ingestions)
-  - [ ] AtRiskItems (stockout risk table)
-  - [ ] SupplierRecommendations (scores + details)
-  - [ ] POTracker (delivery status)
-  - [ ] AgentLogs (execution history)
+  - [x] AgentDashboard (main hub)
+  - [x] DataIngestionStatus (recent ingestions)
+  - [x] AtRiskItems (stockout risk table)
+  - [x] SupplierRecommendations (scores + details)
+  - [x] POTracker (delivery status)
+  - [x] AgentLogs (execution history)
 - [ ] Features:
-  - [ ] Real-time updates (WebSocket or polling)
-  - [ ] Manual agent triggers
-  - [ ] Filter/search capabilities
-  - [ ] Drill-down details
-- [ ] Responsive design (mobile-friendly)
-- [ ] Dark/light theme support
+  - [x] Real-time updates (WebSocket or polling)
+  - [x] Manual agent triggers
+  - [x] Filter/search capabilities
+  - [x] Drill-down details
+- [x] Responsive design (mobile-friendly)
+- [x] Dark/light theme support
 
 **Tasks:**
-1. Create `app/agents/page.tsx`
-2. Create `components/agents/AgentDashboard.tsx`
-3. Create `components/agents/AtRiskItems.tsx`
-4. Create `components/agents/SupplierRecommendations.tsx`
-5. Create `components/agents/POTracker.tsx`
-6. Create `components/agents/AgentLogs.tsx`
-7. Add real-time WebSocket connection
-8. Add manual trigger buttons
-9. Add filtering/sorting
-10. Add responsive styling
+1. [x] Create `app/agents/page.tsx`
+2. [x] Create `components/agents/AgentDashboard.tsx`
+3. [x] Create `components/agents/AtRiskItems.tsx`
+4. [x] Create `components/agents/SupplierRecommendations.tsx`
+5. [x] Create `components/agents/POTracker.tsx`
+6. [x] Create `components/agents/AgentLogs.tsx`
+7. [x] Add real-time updates via polling
+8. [x] Add manual trigger buttons
+9. [x] Add filtering/search and paging
+10. [x] Add responsive styling
+
+**Current Progress Notes:**
+- Added `/agents` dashboard route and integrated it into sidebar navigation.
+- Added frontend agent components:
+  - `components/agents/AgentDashboard.tsx`
+  - `components/agents/DataIngestionStatus.tsx`
+  - `components/agents/AtRiskItems.tsx`
+  - `components/agents/SupplierRecommendations.tsx`
+  - `components/agents/POTracker.tsx`
+  - `components/agents/AgentLogs.tsx`
+- Added typed agent API client support in `lib/ml-api.ts` for dashboard, logs, at-risk analysis, optimization, ingestion trigger/status, and CSV export.
+- Implemented polling refresh for near real-time status updates.
+- Implemented manual agent actions:
+  - data-ingestion trigger
+  - supply-chain optimize trigger
+- Implemented filter/search and drill-down detail panels for risk decisions, POs, and logs.
+- UI respects existing theme tokens for dark/light mode and responsive breakpoints.
 
 **Dependencies:**
 - TASK-401 (API endpoints)
@@ -1093,7 +1136,7 @@ Create React components in Next.js for agent monitoring, at-risk items, supplier
 ## TICKET: TASK-502
 **Title:** Implement Manual Approval Workflow for Auto-POs
 **Type:** Task
-**Status:** Not Started
+**Status:** Completed
 **Priority:** HIGH
 **Story Points:** 8
 **Sprint:** Sprint 5
@@ -1104,32 +1147,60 @@ Create React components in Next.js for agent monitoring, at-risk items, supplier
 Create approval workflow for critical or high-value purchase orders before submission to suppliers.
 
 **Acceptance Criteria:**
-- [ ] PO approval workflow:
-  - [ ] Auto-approved: <$5000, high-reliability supplier
-  - [ ] Manual approval: ≥$5000 or new supplier
-  - [ ] Escalation: >$50000 (manager approval)
-- [ ] Approval UI:
-  - [ ] PO details page with scoring breakdown
-  - [ ] Approve/Reject buttons
-  - [ ] Comments field
-  - [ ] Audit trail
-- [ ] Notification:
-  - [ ] Email to approvers
-  - [ ] In-app notifications
-  - [ ] SMS for urgent (if configured)
-- [ ] Timeout: Auto-approve if pending >24hrs
+- [x] PO approval workflow:
+  - [x] Auto-approved: <$5000, high-reliability supplier
+  - [x] Manual approval: >=$5000 or new supplier
+  - [x] Escalation: >$50000 (manager approval)
+- [x] Approval UI:
+  - [x] PO details page with scoring breakdown
+  - [x] Approve/Reject buttons
+  - [x] Comments field
+  - [x] Audit trail
+- [x] Notification:
+  - [x] Email to approvers
+  - [x] In-app notifications
+  - [x] SMS for urgent (if configured)
+- [x] Timeout: Auto-approve if pending >24hrs
 
 **Tasks:**
-1. Create approval state machine
-2. Add PO approval status field
-3. Create approval rules engine
-4. Build approval UI page
-5. Add notification system
-6. Implement email alerts
-7. Add audit logging
-8. Create `/api/approval-queue` endpoint
-9. Write tests
-10. Document approval rules
+1. [x] Create approval state machine
+2. [x] Add PO approval status field
+3. [x] Create approval rules engine
+4. [x] Build approval UI page
+5. [x] Add notification system
+6. [x] Implement email alerts
+7. [x] Add audit logging
+8. [x] Create `/api/approval-queue` endpoint
+9. [x] Write tests
+10. [x] Document approval rules
+
+**Current Progress Notes:**
+- Added approval data models and schema:
+  - `PurchaseOrderApproval`
+  - `PurchaseOrderApprovalAudit`
+- Implemented approval rules engine and queue helper module in `backend/database/po_approval.py`:
+  - rule evaluation for AUTO/MANUAL/MANAGER levels
+  - timeout auto-approval processing after 24 hours
+  - queue list/detail serializers
+  - approve/reject decision handler with role checks
+  - audit event append helpers
+- Integrated approval workflow into purchase-order generation and submission logic in `backend/agents/purchase_order_agent.py`.
+- Added approval queue API routes in `backend/api/approval_queue.py`:
+  - `GET /api/approval-queue`
+  - `GET /api/approval-queue/{po_id}`
+  - `POST /api/approval-queue/{po_id}/decision`
+  - `POST /api/approval-queue/auto-timeout`
+- Wired approval queue router in `backend/main.py`.
+- Added frontend approval queue route/page and UI:
+  - `app/approval-queue/page.tsx`
+  - `components/approvals/ApprovalQueuePage.tsx`
+  - sidebar navigation link in `components/app-sidebar.tsx`
+  - typed API client additions in `lib/ml-api.ts`
+- Added backend API tests for approval queue workflows in `backend/tests/test_api_approval_queue.py`.
+- Verified targeted backend tests pass:
+  - `backend/tests/test_api_approval_queue.py`
+  - `backend/tests/test_purchase_order_agent.py`
+  - `backend/tests/test_api_purchase_orders.py`
 
 **Dependencies:**
 - TASK-304 (PO generation)
