@@ -88,6 +88,7 @@ def train(
     epochs: int = 25,
     batch_size: int = 64,
     max_samples: int = 25000,
+    verbose: int = 0,
 ) -> dict:
     """Train recurrent model and persist checkpoint/meta/scaler."""
     if not TF_AVAILABLE:
@@ -144,7 +145,7 @@ def train(
         epochs=epochs,
         batch_size=batch_size,
         callbacks=[early_stop, checkpoint],
-        verbose=0,
+        verbose=verbose,
     )
     elapsed = time.perf_counter() - start
 

@@ -46,7 +46,13 @@ export default function SuppliersPage() {
 }
 
 function SuppliersContent() {
-  const { state, dispatch, getItemsBySupplier, hasPermission } = useInventory()
+  const {
+    state,
+    getItemsBySupplier,
+    hasPermission,
+    addSupplierPersisted,
+    updateSupplierPersisted,
+  } = useInventory()
   const { suppliers } = state
   const [search, setSearch] = useState("")
   const [isAddOpen, setIsAddOpen] = useState(false)
@@ -80,9 +86,14 @@ function SuppliersContent() {
             <DialogContent className="max-w-lg">
               <DialogHeader><DialogTitle>Add New Supplier</DialogTitle></DialogHeader>
               <SupplierForm
-                onSubmit={(supplier) => {
-                  dispatch({ type: "ADD_SUPPLIER", payload: supplier })
-                  setIsAddOpen(false)
+                onSubmit={async (supplier) => {
+                  try {
+                    await addSupplierPersisted(supplier)
+                    setIsAddOpen(false)
+                  } catch (error) {
+                    console.error("Failed to add supplier", error)
+                    window.alert("Unable to add supplier right now. Please try again.")
+                  }
                 }}
               />
             </DialogContent>
@@ -113,9 +124,14 @@ function SuppliersContent() {
                           <DialogHeader><DialogTitle>Edit Supplier</DialogTitle></DialogHeader>
                           <SupplierForm
                             defaultValues={supplier}
-                            onSubmit={(updated) => {
-                              dispatch({ type: "UPDATE_SUPPLIER", payload: updated })
-                              setEditSupplier(null)
+                            onSubmit={async (updated) => {
+                              try {
+                                await updateSupplierPersisted(updated)
+                                setEditSupplier(null)
+                              } catch (error) {
+                                console.error("Failed to update supplier", error)
+                                window.alert("Unable to update supplier right now. Please try again.")
+                              }
                             }}
                           />
                         </DialogContent>
@@ -198,7 +214,7 @@ function SuppliersContent() {
   )
 }
 
-function SupplierForm({ defaultValues, onSubmit }: { defaultValues?: Supplier; onSubmit: (s: Supplier) => void }) {
+function SupplierForm({ defaultValues, onSubmit }: { defaultValues?: Supplier; onSubmit: (s: Supplier) => void | Promise<void> }) {
   const [form, setForm] = useState<Partial<Supplier>>(
     defaultValues ?? {
       id: "",
@@ -216,7 +232,7 @@ function SupplierForm({ defaultValues, onSubmit }: { defaultValues?: Supplier; o
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    onSubmit({
+    void onSubmit({
       ...(form as Supplier),
       id: form.id || `s-${crypto.randomUUID().slice(0, 8)}`,
     })

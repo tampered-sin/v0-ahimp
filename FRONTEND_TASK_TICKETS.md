@@ -78,17 +78,28 @@ This file tracks frontend work derived from completed implementation tickets in 
 ## FE-TICKET: FE-504
 **Title:** Frontend Follow-up Sync Backlog
 **Source Tickets:** TASK-107, TASK-105, TASK-106
-**Status:** Pending
+**Status:** Completed
 **Priority:** MEDIUM
 
-**Suggested Next Frontend Work:**
-- Add explainability views for:
+**Implemented Frontend Changes:**
+- Added route: `/model-insights`
+- Added explainability workflow UI for:
   - `/api/explain/item/{item_id}`
   - `/api/explain/prediction/{prediction_id}`
-- Add ensemble/model comparison visual UI for:
+- Added model comparison visuals for:
   - `/api/model-comparison`
-- Add tuning/benchmark visual dashboard from:
-  - optimization reports and model benchmark outputs
+- Added optimization and benchmark dashboard widgets sourced from:
+  - `backend/models/best_params.json`
+  - `backend/benchmark_results.json` (if present)
+  - `backend/benchmark_results_catboost.json`
+- Added frontend artifact proxy endpoint:
+  - `/api/model-artifacts`
+- Added sidebar navigation entry:
+  - `Model Insights`
 
-**Reason:**
-Backend capabilities exist and are production-ready, but frontend exposure is partial.
+**Frontend Acceptance:**
+- Item-level and prediction-level explanation runs from UI controls
+- SHAP/LIME contribution visualizations
+- Side-by-side model metrics comparison table + feature-importance chart
+- Benchmark KPI cards with acceptance-criteria badges
+- Hyperparameter best-parameter drilldown per model

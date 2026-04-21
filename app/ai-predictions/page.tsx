@@ -53,7 +53,7 @@ function OfflineBanner() {
       <AlertDescription className="text-destructive font-medium ml-2">
         Python backend offline. Run:{" "}
         <code className="bg-muted px-1.5 py-0.5 rounded text-xs">
-          cd backend &amp;&amp; uvicorn main:app --port 8000
+          cd backend &amp;&amp; uvicorn main:app --port 9000
         </code>
       </AlertDescription>
     </Alert>
@@ -76,7 +76,7 @@ function AIPredictionsContent() {
   const [items,  setItems]      = useState<DemandItem[]>([])
 
   useEffect(() => {
-    fetch("http://localhost:8000/api/health")
+    fetch("http://localhost:9000/api/health")
       .then(r => r.ok ? setOnline(true) : setOnline(false))
       .catch(() => setOnline(false))
     getDemandItems().then(d => d && setItems(d.items))
@@ -95,7 +95,7 @@ function AIPredictionsContent() {
             <BrainCircuit className="size-5 text-primary" />
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Powered by XGBoost · Random Forest · Logistic Regression</p>
+            <p className="text-xs text-muted-foreground">Powered by LightGBM + CatBoost · Random Forest · Logistic Regression</p>
           </div>
         </div>
         {statusBadge}
@@ -130,6 +130,11 @@ function DemandTab({ items, backendOnline }: { items: DemandItem[]; backendOnlin
   const [data,        setData]        = useState<DemandForecastResponse | null>(null)
   const [loading,     setLoading]     = useState(false)
 
+  const formatMetric = (value: number | null | undefined, digits: number) => {
+    if (value === null || value === undefined || Number.isNaN(value)) return "N/A"
+    return value.toFixed(digits)
+  }
+
   useEffect(() => {
     if (items.length > 0 && !selectedId) setSelectedId(items[0].id)
   }, [items, selectedId])
@@ -141,10 +146,16 @@ function DemandTab({ items, backendOnline }: { items: DemandItem[]; backendOnlin
   }, [selectedId, backendOnline])
 
   const modelComparison = data ? [
-    { model: "Linear Reg.", mae: data.metrics.lr?.mae ?? 0,    rmse: data.metrics.lr?.rmse ?? 0,    r2: data.metrics.lr?.r2 ?? 0 },
-    { model: "ARIMA",       mae: data.metrics.arima?.mae ?? 0, rmse: data.metrics.arima?.rmse ?? 0, r2: data.metrics.arima?.r2 ?? 0 },
-    { model: "XGBoost",     mae: data.metrics.xgb?.mae ?? 0,   rmse: data.metrics.xgb?.rmse ?? 0,   r2: data.metrics.xgb?.r2 ?? 0 },
+    { model: "Linear Reg.", mae: data.metrics.lr?.mae,    rmse: data.metrics.lr?.rmse,    r2: data.metrics.lr?.r2 },
+    { model: "ARIMA",       mae: data.metrics.arima?.mae, rmse: data.metrics.arima?.rmse, r2: data.metrics.arima?.r2 },
+    { model: "LightGBM",    mae: data.metrics.xgb?.mae,   rmse: data.metrics.xgb?.rmse,   r2: data.metrics.xgb?.r2 },
   ] : []
+
+  const bestR2 = modelComparison.reduce<number | null>((best, model) => {
+    if (model.r2 === null || model.r2 === undefined || Number.isNaN(model.r2)) return best
+    if (best === null || model.r2 > best) return model.r2
+    return best
+  }, null)
 
   return (
     <div className="flex flex-col gap-4">
@@ -177,7 +188,7 @@ function DemandTab({ items, backendOnline }: { items: DemandItem[]; backendOnlin
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-semibold">14-Day Demand Forecast — {data.item_name}</CardTitle>
-              <CardDescription className="text-xs">XGBoost prediction with 80% confidence band</CardDescription>
+              <CardDescription className="text-xs">LightGBM prediction with 80% confidence band</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="h-72">
@@ -214,15 +225,15 @@ function DemandTab({ items, backendOnline }: { items: DemandItem[]; backendOnlin
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {modelComparison.map((m, i) => (
-                      <TableRow key={m.model} className={i === 2 ? "bg-primary/5 font-semibold" : ""}>
+                    {modelComparison.map((m) => (
+                      <TableRow key={m.model} className={bestR2 !== null && m.r2 === bestR2 ? "bg-primary/5 font-semibold" : ""}>
                         <TableCell className="font-medium">
                           {m.model}
-                          {i === 2 && <Badge className="ml-2 text-[10px] py-0 bg-primary/20 text-primary border-primary/30">Best</Badge>}
+                          {bestR2 !== null && m.r2 === bestR2 && <Badge className="ml-2 text-[10px] py-0 bg-primary/20 text-primary border-primary/30">Best</Badge>}
                         </TableCell>
-                        <TableCell className="text-right">{m.mae.toFixed(2)}</TableCell>
-                        <TableCell className="text-right">{m.rmse.toFixed(2)}</TableCell>
-                        <TableCell className="text-right">{m.r2.toFixed(3)}</TableCell>
+                        <TableCell className="text-right">{formatMetric(m.mae, 2)}</TableCell>
+                        <TableCell className="text-right">{formatMetric(m.rmse, 2)}</TableCell>
+                        <TableCell className="text-right">{formatMetric(m.r2, 3)}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -232,7 +243,7 @@ function DemandTab({ items, backendOnline }: { items: DemandItem[]; backendOnlin
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold">Feature Importance (XGBoost)</CardTitle>
+                <CardTitle className="text-sm font-semibold">Feature Importance (LightGBM)</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="h-52">

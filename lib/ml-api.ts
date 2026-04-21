@@ -4,7 +4,7 @@
  * All functions return null if the backend is offline.
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/+$/, "") || "http://localhost:8000"
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/+$/, "") || "http://localhost:9000"
 const BASE = `${API_BASE}/api`
 const AGENTS_API_KEY = process.env.NEXT_PUBLIC_AGENTS_API_KEY
 
@@ -18,7 +18,7 @@ export interface ApiResult<T> {
 }
 
 interface ApiRequestOptions {
-  method?: "GET" | "POST"
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
   query?: Record<string, PrimitiveQuery>
   body?: unknown
   responseType?: "json" | "text"
@@ -135,6 +135,72 @@ export interface ModelOverviewResponse {
   expiry_metrics: ModelMetrics
   feature_importance: FeatureImportance[]
   architecture: ArchitectureStep[]
+}
+
+export interface ShapGlobalImportance {
+  feature: string
+  mean_abs_shap: number
+}
+
+export interface ShapLocalContribution {
+  feature: string
+  feature_value: number
+  shap_value: number
+  abs_shap: number
+}
+
+export interface LimeWeight {
+  feature: string
+  weight: number
+}
+
+export interface ExplainabilityResponse {
+  item_id: number
+  item_name: string
+  usage_date: string
+  prediction_id?: number
+  model: string
+  forecast_preview?: ForecastPoint[]
+  feature_snapshot: Array<{
+    feature: string
+    value: number
+  }>
+  shap: {
+    global: {
+      available: boolean
+      importance: ShapGlobalImportance[]
+      sample_size: number
+      error?: string | null
+    }
+    local: {
+      available: boolean
+      base_value: number | null
+      prediction: number | null
+      contributions: ShapLocalContribution[]
+      top_contributions: ShapLocalContribution[]
+      error?: string | null
+    }
+    force_plot: {
+      base_value: number | null
+      prediction: number | null
+      top_features: ShapLocalContribution[]
+    }
+  }
+  lime: {
+    available: boolean
+    prediction: number | null
+    score: number | null
+    weights: LimeWeight[]
+    error?: string | null
+  }
+}
+
+export interface ModelComparisonResponse {
+  primary_model: string
+  lgbm: ModelMetrics
+  lr: ModelMetrics
+  arima: ModelMetrics
+  feature_importance: FeatureImportance[]
 }
 
 export interface DemandItem {
@@ -332,6 +398,88 @@ export interface ApprovalTimeoutResponse {
   }>
 }
 
+export interface InventorySnapshotResponse {
+  items: Array<{
+    id: string
+    name: string
+    category: string
+    sku: string
+    quantity: number
+    unit: string
+    reorderLevel: number
+    unitPrice: number
+    supplierId: string
+    departmentId: string
+    batchNumber: string
+    expiryDate: string
+    location: string
+    status: string
+    lastRestocked: string
+    notes: string
+  }>
+  suppliers: Array<{
+    id: string
+    name: string
+    contact: string
+    email: string
+    phone: string
+    address: string
+    rating: number
+    itemsSupplied: number
+  }>
+  departments: Array<{
+    id: string
+    name: string
+    head: string
+    budget: number
+    spent: number
+  }>
+  purchaseOrders: Array<{
+    id: string
+    supplierId: string
+    items: Array<{
+      itemId: string
+      itemName: string
+      quantity: number
+      unitPrice: number
+    }>
+    status: string
+    orderDate: string
+    expectedDelivery: string
+    totalAmount: number
+  }>
+  alerts: Array<{
+    id: string
+    type: string
+    severity: string
+    message: string
+    itemId?: string
+    timestamp: string
+    acknowledged: boolean
+  }>
+  activityLogs: Array<{
+    id: string
+    action: string
+    userId: string
+    itemId?: string
+    timestamp: string
+    details: string
+  }>
+}
+
+export interface InventoryMonthlyTrendResponse {
+  months: number
+  points: Array<{
+    month: string
+    consumption: number
+    restocked: number
+  }>
+}
+
+export type InventorySnapshotItem = InventorySnapshotResponse["items"][number]
+export type InventorySnapshotSupplier = InventorySnapshotResponse["suppliers"][number]
+export type InventorySnapshotOrder = InventorySnapshotResponse["purchaseOrders"][number]
+
 // ─── Fetch Helper ─────────────────────────────────────────────────────────────
 
 function buildQuery(query?: Record<string, PrimitiveQuery>): string {
@@ -431,6 +579,15 @@ export const getStockoutRisk  = () => apiFetch<StockoutRiskResponse>("/stockout-
 export const getExpiryRisk    = () => apiFetch<ExpiryRiskResponse>("/expiry-risk")
 export const getCostSavings   = () => apiFetch<CostSavingsResponse>("/cost-savings")
 export const getModelOverview = () => apiFetch<ModelOverviewResponse>("/model-overview")
+export const getModelComparison = () => apiFetch<ModelComparisonResponse>("/model-comparison")
+export const getExplainItem = (itemId: number, topK = 8) =>
+  apiRequest<ExplainabilityResponse>(`/explain/item/${itemId}`, {
+    query: { top_k: topK },
+  })
+export const getExplainPrediction = (predictionId: number, topK = 8) =>
+  apiRequest<ExplainabilityResponse>(`/explain/prediction/${predictionId}`, {
+    query: { top_k: topK },
+  })
 export const getHealth        = () => apiFetch<{ status: string }>("/health")
 
 export const getAgentsDashboard = () =>
@@ -515,3 +672,55 @@ export const processApprovalTimeouts = () =>
   apiRequest<ApprovalTimeoutResponse>("/approval-queue/auto-timeout", {
     method: "POST",
   })
+
+export const getInventorySnapshot = () =>
+  apiFetch<InventorySnapshotResponse>("/inventory/snapshot")
+
+export const createInventoryItem = (payload: InventorySnapshotItem) =>
+  apiRequest<{ ok: boolean; itemId: string }>("/inventory/items", {
+    method: "POST",
+    body: payload,
+  })
+
+export const updateInventoryItem = (itemId: string, payload: InventorySnapshotItem) =>
+  apiRequest<{ ok: boolean; error?: string }>(`/inventory/items/${itemId}`, {
+    method: "PUT",
+    body: payload,
+  })
+
+export const deleteInventoryItem = (itemId: string) =>
+  apiRequest<{ ok: boolean; error?: string }>(`/inventory/items/${itemId}`, {
+    method: "DELETE",
+  })
+
+export const createInventorySupplier = (payload: InventorySnapshotSupplier) =>
+  apiRequest<{ ok: boolean; supplierId: string }>("/inventory/suppliers", {
+    method: "POST",
+    body: payload,
+  })
+
+export const updateInventorySupplier = (supplierId: string, payload: InventorySnapshotSupplier) =>
+  apiRequest<{ ok: boolean; error?: string }>(`/inventory/suppliers/${supplierId}`, {
+    method: "PUT",
+    body: payload,
+  })
+
+export const deleteInventorySupplier = (supplierId: string) =>
+  apiRequest<{ ok: boolean; error?: string }>(`/inventory/suppliers/${supplierId}`, {
+    method: "DELETE",
+  })
+
+export const createInventoryOrder = (payload: InventorySnapshotOrder) =>
+  apiRequest<{ ok: boolean; orderId: string; error?: string }>("/inventory/orders", {
+    method: "POST",
+    body: payload,
+  })
+
+export const updateInventoryOrderStatus = (orderId: string, status: string) =>
+  apiRequest<{ ok: boolean; status?: string; error?: string }>(`/inventory/orders/${orderId}/status`, {
+    method: "PUT",
+    body: { status },
+  })
+
+export const getInventoryMonthlyTrend = (months = 6) =>
+  apiFetch<InventoryMonthlyTrendResponse>(`/inventory/monthly-trend?months=${months}`)

@@ -61,7 +61,13 @@ export default function OrdersPage() {
 }
 
 function OrdersContent() {
-  const { state, dispatch, getSupplierById, hasPermission } = useInventory()
+  const {
+    state,
+    getSupplierById,
+    hasPermission,
+    addOrderPersisted,
+    updateOrderStatusPersisted,
+  } = useInventory()
   const { purchaseOrders } = state
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
@@ -81,10 +87,10 @@ function OrdersContent() {
   const pendingCount = purchaseOrders.filter((o) => o.status === OrderStatus.Pending).length
   const shippedCount = purchaseOrders.filter((o) => o.status === OrderStatus.Shipped).length
 
-  const handleStatusChange = (orderId: string, newStatus: OrderStatus) => {
-    const order = state.purchaseOrders.find((o) => o.id === orderId)
-    if (order) {
-      dispatch({ type: "UPDATE_ORDER", payload: { ...order, status: newStatus } })
+  const handleStatusChange = async (orderId: string, newStatus: OrderStatus) => {
+    const res = await updateOrderStatusPersisted(orderId, newStatus)
+    if (!res.ok) {
+      window.alert(res.error ?? "Unable to update order status right now. Please try again.")
     }
   }
 
@@ -125,9 +131,13 @@ function OrdersContent() {
               <OrderForm
                 suppliers={state.suppliers}
                 items={state.items}
-                onSubmit={(order) => {
-                  dispatch({ type: "ADD_ORDER", payload: order })
-                  setIsAddOpen(false)
+                onSubmit={async (order) => {
+                  const res = await addOrderPersisted(order)
+                  if (res.ok) {
+                    setIsAddOpen(false)
+                  } else {
+                    window.alert(res.error ?? "Unable to create order right now. Please try again.")
+                  }
                 }}
               />
             </DialogContent>
@@ -258,7 +268,7 @@ function OrderForm({
 }: {
   suppliers: { id: string; name: string }[]
   items: { id: string; name: string; unitPrice: number }[]
-  onSubmit: (order: PurchaseOrder) => void
+  onSubmit: (order: PurchaseOrder) => void | Promise<void>
 }) {
   const [supplierId, setSupplierId] = useState(suppliers[0]?.id ?? "")
   const [orderItems, setOrderItems] = useState<PurchaseOrderItem[]>([])
@@ -286,7 +296,7 @@ function OrderForm({
     const expectedDelivery = new Date(orderDate)
     expectedDelivery.setDate(orderDate.getDate() + 14)
 
-    onSubmit({
+    void onSubmit({
       id: `po-${crypto.randomUUID().slice(0, 8)}`,
       supplierId,
       items: orderItems,

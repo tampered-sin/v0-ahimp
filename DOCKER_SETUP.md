@@ -25,11 +25,11 @@ docker-compose up --build
 3. Create the database
 4. Seed 20 years of synthetic data (~7.3M records)
 5. Train ML models (5-10 minutes)
-6. Expose APIs at `http://localhost:8000`
+6. Expose APIs at `http://localhost:9000`
 
 ### 2. Access the Application
 
-- **API Docs**: http://localhost:8000/docs (Swagger UI)
+- **API Docs**: http://localhost:9000/docs (Swagger UI)
 - **Database**: `localhost:5432` (PostgreSQL)
   - User: `ahimp_user`
   - Password: `ahimp_secure_password_2024`
