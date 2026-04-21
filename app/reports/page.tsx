@@ -27,7 +27,6 @@ import {
 import {
   BarChart3,
   Download,
-  FileSpreadsheet,
   Package,
   TrendingDown,
   Clock,
@@ -48,7 +47,6 @@ import {
   PieChart,
   Pie,
   Cell,
-  Legend,
 } from "recharts"
 
 export default function ReportsPage() {
@@ -69,7 +67,6 @@ function ReportsContent() {
     getItemsByDepartment,
     getItemsBySupplier,
     getSupplierById,
-    getDepartmentById,
   } = useInventory()
   const { items, suppliers, departments, purchaseOrders } = state
 
@@ -107,7 +104,6 @@ function ReportsContent() {
         <TabsContent value="overview" className="mt-4">
           <OverviewReport
             items={items}
-            purchaseOrders={purchaseOrders}
           />
         </TabsContent>
 
@@ -129,7 +125,6 @@ function ReportsContent() {
 
         <TabsContent value="department" className="mt-4">
           <DepartmentReport
-            items={items}
             departments={departments}
             getItemsByDepartment={getItemsByDepartment}
           />
@@ -137,7 +132,6 @@ function ReportsContent() {
 
         <TabsContent value="supplier" className="mt-4">
           <SupplierReport
-            items={items}
             suppliers={suppliers}
             purchaseOrders={purchaseOrders}
             getItemsBySupplier={getItemsBySupplier}
@@ -147,8 +141,6 @@ function ReportsContent() {
         <TabsContent value="valuation" className="mt-4">
           <ValuationReport
             items={items}
-            departments={departments}
-            getItemsByDepartment={getItemsByDepartment}
             getItemsByCategory={getItemsByCategory}
           />
         </TabsContent>
@@ -160,10 +152,8 @@ function ReportsContent() {
 // Overview Report
 function OverviewReport({
   items,
-  purchaseOrders,
 }: {
   items: typeof import("@/lib/types").InventoryItem extends never ? never : ReturnType<typeof useInventory>["state"]["items"]
-  purchaseOrders: ReturnType<typeof useInventory>["state"]["purchaseOrders"]
 }) {
   const totalItems = items.length
   const totalQuantity = items.reduce((sum, i) => sum + i.quantity, 0)
@@ -623,11 +613,9 @@ function ExpiryReport({
 
 // Department Report
 function DepartmentReport({
-  items,
   departments,
   getItemsByDepartment,
 }: {
-  items: ReturnType<typeof useInventory>["state"]["items"]
   departments: ReturnType<typeof useInventory>["state"]["departments"]
   getItemsByDepartment: ReturnType<typeof useInventory>["getItemsByDepartment"]
 }) {
@@ -760,12 +748,10 @@ function DepartmentReport({
 
 // Supplier Report
 function SupplierReport({
-  items,
   suppliers,
   purchaseOrders,
   getItemsBySupplier,
 }: {
-  items: ReturnType<typeof useInventory>["state"]["items"]
   suppliers: ReturnType<typeof useInventory>["state"]["suppliers"]
   purchaseOrders: ReturnType<typeof useInventory>["state"]["purchaseOrders"]
   getItemsBySupplier: ReturnType<typeof useInventory>["getItemsBySupplier"]
@@ -869,13 +855,9 @@ function SupplierReport({
 // Valuation Report
 function ValuationReport({
   items,
-  departments,
-  getItemsByDepartment,
   getItemsByCategory,
 }: {
   items: ReturnType<typeof useInventory>["state"]["items"]
-  departments: ReturnType<typeof useInventory>["state"]["departments"]
-  getItemsByDepartment: ReturnType<typeof useInventory>["getItemsByDepartment"]
   getItemsByCategory: ReturnType<typeof useInventory>["getItemsByCategory"]
 }) {
   const totalValue = items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0)

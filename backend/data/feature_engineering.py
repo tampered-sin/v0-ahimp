@@ -61,41 +61,32 @@ def build_demand_features(df: pd.DataFrame) -> pd.DataFrame:
         .sort_values(["item_id", "usage_date"])
     )
 
-    features = []
-    for item_id, grp in daily.groupby("item_id"):
-        grp = grp.set_index("usage_date").sort_index()
+    grouped = daily.groupby("item_id", sort=False)
 
-        # Rolling averages
-        grp["rolling_7d"]  = grp["quantity_used"].rolling(7,  min_periods=1).mean()
-        grp["rolling_30d"] = grp["quantity_used"].rolling(30, min_periods=1).mean()
+    # Rolling averages and lag features (vectorized per item group)
+    daily["rolling_7d"] = grouped["quantity_used"].transform(
+        lambda s: s.rolling(7, min_periods=1).mean()
+    )
+    daily["rolling_30d"] = grouped["quantity_used"].transform(
+        lambda s: s.rolling(30, min_periods=1).mean()
+    )
+    daily["lag_7"] = grouped["quantity_used"].shift(7).fillna(0)
+    daily["lag_14"] = grouped["quantity_used"].shift(14).fillna(0)
 
-        # Lag features
-        grp["lag_7"]  = grp["quantity_used"].shift(7).fillna(0)
-        grp["lag_14"] = grp["quantity_used"].shift(14).fillna(0)
+    # Seasonality from date column
+    daily["day_of_week"] = daily["usage_date"].dt.dayofweek
+    daily["month"] = daily["usage_date"].dt.month
 
-        # Seasonality
-        grp["day_of_week"] = grp.index.dayofweek
-        grp["month"]       = grp.index.month
+    # Faster velocity proxy: rolling mean of first differences over 14 days.
+    daily["velocity"] = grouped["quantity_used"].transform(
+        lambda s: s.diff().rolling(14, min_periods=2).mean()
+    ).fillna(0)
 
-        # Demand velocity (slope of last 14 days)
-        grp["velocity"] = (
-            grp["quantity_used"]
-            .rolling(14, min_periods=2)
-            .apply(lambda x: np.polyfit(range(len(x)), x, 1)[0], raw=True)
-            .fillna(0)
-        )
+    # Stock ratio proxy (safe divide when reorder_point is zero)
+    denom = daily["reorder_point"].replace(0, np.nan)
+    daily["stock_ratio"] = (daily["quantity_used"] / denom).replace([np.inf, -np.inf], np.nan).fillna(0)
 
-        # Stock ratio proxy (reorder_point as normalizer)
-        grp["stock_ratio"] = (
-            grp["quantity_used"] / grp["reorder_point"].iloc[0]
-        ).replace([np.inf, -np.inf], 0)
-
-        grp = grp.reset_index()
-        features.append(grp)
-
-    result = pd.concat(features, ignore_index=True)
-    result = result.fillna(0)
-    return result
+    return daily.fillna(0)
 
 
 def build_stockout_features(df: pd.DataFrame, horizon_days: int = 7) -> pd.DataFrame:
@@ -105,25 +96,36 @@ def build_stockout_features(df: pd.DataFrame, horizon_days: int = 7) -> pd.DataF
     """
     feat_df = build_demand_features(df)
 
-    rows = []
-    for item_id, grp in feat_df.groupby("item_id"):
-        safety = grp["safety_stock_level"].iloc[0]
+    rows: list[pd.DataFrame] = []
+    feature_cols = [
+        "item_id", "usage_date", "rolling_7d", "rolling_30d",
+        "lag_7", "lag_14", "day_of_week", "month",
+        "velocity", "stock_ratio", "avg_lead_time_days", "reliability_score",
+    ]
+
+    for _, grp in feat_df.groupby("item_id", sort=False):
         grp = grp.sort_values("usage_date").reset_index(drop=True)
+        n = len(grp)
+        if n <= horizon_days:
+            continue
 
-        for i in range(len(grp) - horizon_days):
-            future_demand = grp.loc[i + 1: i + horizon_days, "quantity_used"].sum()
-            label = int(future_demand > safety)
+        usage = grp["quantity_used"].to_numpy(dtype=float)
+        safety = float(grp["safety_stock_level"].iloc[0])
 
-            row = grp.loc[i, [
-                "item_id", "usage_date", "rolling_7d", "rolling_30d",
-                "lag_7", "lag_14", "day_of_week", "month",
-                "velocity", "stock_ratio",
-                "avg_lead_time_days", "reliability_score",
-            ]].to_dict()
-            row["stockout_label"] = label
-            rows.append(row)
+        # future_demand[i] = sum(quantity_used[i+1 : i+1+horizon_days])
+        cumsum = np.cumsum(np.insert(usage, 0, 0.0))
+        idx = np.arange(0, n - horizon_days)
+        future_demand = cumsum[idx + 1 + horizon_days] - cumsum[idx + 1]
+        labels = (future_demand > safety).astype(int)
 
-    return pd.DataFrame(rows).fillna(0)
+        out = grp.loc[idx, feature_cols].copy()
+        out["stockout_label"] = labels
+        rows.append(out)
+
+    if not rows:
+        return pd.DataFrame(columns=feature_cols + ["stockout_label"])
+
+    return pd.concat(rows, ignore_index=True).fillna(0)
 
 
 def build_expiry_features(df: pd.DataFrame) -> pd.DataFrame:

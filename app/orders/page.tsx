@@ -6,11 +6,10 @@ import { OrderStatusBadge } from "@/components/stock-status-badge"
 import { useInventory } from "@/lib/inventory-context"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import { OrderStatus, type PurchaseOrder, type PurchaseOrderItem } from "@/lib/types"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Badge } from "@/components/ui/badge"
 import {
   Table,
   TableBody,
@@ -62,7 +61,13 @@ export default function OrdersPage() {
 }
 
 function OrdersContent() {
-  const { state, dispatch, getSupplierById, hasPermission } = useInventory()
+  const {
+    state,
+    getSupplierById,
+    hasPermission,
+    addOrderPersisted,
+    updateOrderStatusPersisted,
+  } = useInventory()
   const { purchaseOrders } = state
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
@@ -81,12 +86,11 @@ function OrdersContent() {
   const totalValue = purchaseOrders.reduce((sum, o) => sum + o.totalAmount, 0)
   const pendingCount = purchaseOrders.filter((o) => o.status === OrderStatus.Pending).length
   const shippedCount = purchaseOrders.filter((o) => o.status === OrderStatus.Shipped).length
-  const deliveredCount = purchaseOrders.filter((o) => o.status === OrderStatus.Delivered).length
 
-  const handleStatusChange = (orderId: string, newStatus: OrderStatus) => {
-    const order = state.purchaseOrders.find((o) => o.id === orderId)
-    if (order) {
-      dispatch({ type: "UPDATE_ORDER", payload: { ...order, status: newStatus } })
+  const handleStatusChange = async (orderId: string, newStatus: OrderStatus) => {
+    const res = await updateOrderStatusPersisted(orderId, newStatus)
+    if (!res.ok) {
+      window.alert(res.error ?? "Unable to update order status right now. Please try again.")
     }
   }
 
@@ -127,9 +131,13 @@ function OrdersContent() {
               <OrderForm
                 suppliers={state.suppliers}
                 items={state.items}
-                onSubmit={(order) => {
-                  dispatch({ type: "ADD_ORDER", payload: order })
-                  setIsAddOpen(false)
+                onSubmit={async (order) => {
+                  const res = await addOrderPersisted(order)
+                  if (res.ok) {
+                    setIsAddOpen(false)
+                  } else {
+                    window.alert(res.error ?? "Unable to create order right now. Please try again.")
+                  }
                 }}
               />
             </DialogContent>
@@ -260,7 +268,7 @@ function OrderForm({
 }: {
   suppliers: { id: string; name: string }[]
   items: { id: string; name: string; unitPrice: number }[]
-  onSubmit: (order: PurchaseOrder) => void
+  onSubmit: (order: PurchaseOrder) => void | Promise<void>
 }) {
   const [supplierId, setSupplierId] = useState(suppliers[0]?.id ?? "")
   const [orderItems, setOrderItems] = useState<PurchaseOrderItem[]>([])
@@ -284,13 +292,17 @@ function OrderForm({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (orderItems.length === 0) return
-    onSubmit({
-      id: `po${Date.now()}`,
+    const orderDate = new Date()
+    const expectedDelivery = new Date(orderDate)
+    expectedDelivery.setDate(orderDate.getDate() + 14)
+
+    void onSubmit({
+      id: `po-${crypto.randomUUID().slice(0, 8)}`,
       supplierId,
       items: orderItems,
       status: OrderStatus.Pending,
-      orderDate: new Date().toISOString().split("T")[0],
-      expectedDelivery: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+      orderDate: orderDate.toISOString().split("T")[0],
+      expectedDelivery: expectedDelivery.toISOString().split("T")[0],
       totalAmount: total,
     })
   }

@@ -18,6 +18,8 @@ yarn-error.log*
 
 # env files
 .env*
+!.env.example
+!backend/.env.example
 
 # vercel
 .vercel
@@ -30,6 +32,28 @@ __pycache__/
 *.py[cod]
 *.class
 *.db
+.venv/
+.venv*/
+.env
 venv/
 venv*/
-.env
+backend/.venv/
+backend/.venv*/
+backend/venv/
+backend/venv*/
+
+# Python tooling / test caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+
+# ML artifacts
+backend/models/pkl/*.pkl
+backend/catboost_info/
+
+# Local runtime data
+ahimp.db
+backend/ahimp.db
+Ahimp_claude_api.txt

@@ -70,7 +70,14 @@ export default function InventoryPage() {
 }
 
 function InventoryContent() {
-  const { state, dispatch, getSupplierById, getDepartmentById, hasPermission } = useInventory()
+  const {
+    state,
+    getDepartmentById,
+    hasPermission,
+    addItemPersisted,
+    updateItemPersisted,
+    deleteItemPersisted,
+  } = useInventory()
   const { items } = state
 
   const [search, setSearch] = useState("")
@@ -130,8 +137,13 @@ function InventoryContent() {
     }
   }
 
-  const handleDelete = (id: string) => {
-    dispatch({ type: "DELETE_ITEM", payload: id })
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteItemPersisted(id)
+    } catch (error) {
+      console.error("Failed to delete item", error)
+      window.alert("Unable to delete item right now. Please try again.")
+    }
   }
 
   return (
@@ -184,9 +196,14 @@ function InventoryContent() {
                 <DialogTitle>Add New Inventory Item</DialogTitle>
               </DialogHeader>
               <InventoryForm
-                onSubmit={(item) => {
-                  dispatch({ type: "ADD_ITEM", payload: item })
-                  setIsAddOpen(false)
+                onSubmit={async (item) => {
+                  try {
+                    await addItemPersisted(item)
+                    setIsAddOpen(false)
+                  } catch (error) {
+                    console.error("Failed to add item", error)
+                    window.alert("Unable to add item right now. Please try again.")
+                  }
                 }}
                 suppliers={state.suppliers}
                 departments={state.departments}
@@ -316,9 +333,14 @@ function InventoryContent() {
                                   </DialogHeader>
                                   <InventoryForm
                                     defaultValues={item}
-                                    onSubmit={(updated) => {
-                                      dispatch({ type: "UPDATE_ITEM", payload: updated })
-                                      setEditItem(null)
+                                    onSubmit={async (updated) => {
+                                      try {
+                                        await updateItemPersisted(updated)
+                                        setEditItem(null)
+                                      } catch (error) {
+                                        console.error("Failed to update item", error)
+                                        window.alert("Unable to update item right now. Please try again.")
+                                      }
                                     }}
                                     suppliers={state.suppliers}
                                     departments={state.departments}
@@ -399,7 +421,7 @@ function InventoryContent() {
 // Inventory Form Component
 interface InventoryFormProps {
   defaultValues?: InventoryItem
-  onSubmit: (item: InventoryItem) => void
+  onSubmit: (item: InventoryItem) => void | Promise<void>
   suppliers: { id: string; name: string }[]
   departments: { id: string; name: string }[]
 }
@@ -407,7 +429,7 @@ interface InventoryFormProps {
 function InventoryForm({ defaultValues, onSubmit, suppliers, departments }: InventoryFormProps) {
   const [form, setForm] = useState<Partial<InventoryItem>>(
     defaultValues ?? {
-      id: `i${Date.now()}`,
+      id: "",
       name: "",
       category: Category.Medicines,
       sku: "",
@@ -428,12 +450,19 @@ function InventoryForm({ defaultValues, onSubmit, suppliers, departments }: Inve
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    const item = form as InventoryItem
-    // Auto-calculate status
-    if (item.quantity === 0) item.status = StockStatus.OutOfStock
-    else if (item.quantity <= item.reorderLevel) item.status = StockStatus.LowStock
-    else item.status = StockStatus.InStock
-    onSubmit(item)
+    const item = {
+      ...(form as InventoryItem),
+      id: form.id || `i-${crypto.randomUUID().slice(0, 8)}`,
+    }
+
+    const status =
+      item.quantity === 0
+        ? StockStatus.OutOfStock
+        : item.quantity <= item.reorderLevel
+          ? StockStatus.LowStock
+          : StockStatus.InStock
+
+    void onSubmit({ ...item, status })
   }
 
   const update = (field: string, value: string | number) => {

@@ -34,7 +34,14 @@ import {
   LineChart,
   Line,
 } from "recharts"
-import { getStockoutRisk, getExpiryRisk, type StockoutRiskResponse, type ExpiryRiskResponse } from "@/lib/ml-api"
+import {
+  getStockoutRisk,
+  getExpiryRisk,
+  getInventoryMonthlyTrend,
+  type StockoutRiskResponse,
+  type ExpiryRiskResponse,
+  type InventoryMonthlyTrendResponse,
+} from "@/lib/ml-api"
 
 export default function DashboardPage() {
   return (
@@ -46,15 +53,26 @@ export default function DashboardPage() {
 
 function DashboardContent() {
   const { state, getLowStockItems, getExpiringItems, getUnacknowledgedAlerts } = useInventory()
-  const { items, purchaseOrders, activityLogs, alerts } = state
+  const { items, purchaseOrders, activityLogs } = state
 
   // AI Insight state
   const [stockoutData, setStockoutData] = useState<StockoutRiskResponse | null>(null)
   const [expiryData,   setExpiryData]   = useState<ExpiryRiskResponse   | null>(null)
+  const [monthlyTrend, setMonthlyTrend] = useState<InventoryMonthlyTrendResponse["points"]>([])
+  const [monthlyTrendLoading, setMonthlyTrendLoading] = useState(true)
 
   useEffect(() => {
     getStockoutRisk().then(d => d && setStockoutData(d))
     getExpiryRisk().then(d => d && setExpiryData(d))
+
+    ;(async () => {
+      try {
+        const trend = await getInventoryMonthlyTrend(6)
+        setMonthlyTrend(trend?.points ?? [])
+      } finally {
+        setMonthlyTrendLoading(false)
+      }
+    })()
   }, [])
 
   const totalItems = items.length
@@ -81,16 +99,6 @@ function DashboardContent() {
     { name: "Out of Stock", value: items.filter((i) => i.status === StockStatus.OutOfStock).length, fill: "var(--color-destructive)" },
     { name: "Expired", value: items.filter((i) => i.status === StockStatus.Expired).length, fill: "var(--color-chart-5)" },
   ].filter((d) => d.value > 0)
-
-  // Monthly trend data (simulated)
-  const monthlyTrend = [
-    { month: "Sep", consumption: 12400, restocked: 15200 },
-    { month: "Oct", consumption: 13800, restocked: 11500 },
-    { month: "Nov", consumption: 14200, restocked: 16800 },
-    { month: "Dec", consumption: 15600, restocked: 14200 },
-    { month: "Jan", consumption: 13200, restocked: 17500 },
-    { month: "Feb", consumption: 11800, restocked: 13400 },
-  ]
 
   // Critical alerts (unacknowledged)
   const criticalAlerts = getUnacknowledgedAlerts()
@@ -286,26 +294,36 @@ function DashboardContent() {
             <CardTitle className="text-sm font-semibold text-foreground">Monthly Consumption vs Restocking</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={monthlyTrend} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                  <XAxis dataKey="month" tick={{ fontSize: 11 }} className="fill-muted-foreground" />
-                  <YAxis tick={{ fontSize: 11 }} className="fill-muted-foreground" />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "var(--color-card)",
-                      border: "1px solid var(--color-border)",
-                      borderRadius: "8px",
-                      fontSize: "12px",
-                      color: "var(--color-foreground)",
-                    }}
-                  />
-                  <Line type="monotone" dataKey="consumption" stroke="var(--color-destructive)" strokeWidth={2} dot={{ r: 3 }} name="Consumption" />
-                  <Line type="monotone" dataKey="restocked" stroke="var(--color-primary)" strokeWidth={2} dot={{ r: 3 }} name="Restocked" />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
+            {monthlyTrendLoading ? (
+              <div className="h-64 flex items-center justify-center text-sm text-muted-foreground">
+                Loading monthly trend...
+              </div>
+            ) : monthlyTrend.length === 0 ? (
+              <div className="h-64 flex items-center justify-center text-sm text-muted-foreground">
+                No trend data available yet.
+              </div>
+            ) : (
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={monthlyTrend} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                    <XAxis dataKey="month" tick={{ fontSize: 11 }} className="fill-muted-foreground" />
+                    <YAxis tick={{ fontSize: 11 }} className="fill-muted-foreground" />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "var(--color-card)",
+                        border: "1px solid var(--color-border)",
+                        borderRadius: "8px",
+                        fontSize: "12px",
+                        color: "var(--color-foreground)",
+                      }}
+                    />
+                    <Line type="monotone" dataKey="consumption" stroke="var(--color-destructive)" strokeWidth={2} dot={{ r: 3 }} name="Consumption" />
+                    <Line type="monotone" dataKey="restocked" stroke="var(--color-primary)" strokeWidth={2} dot={{ r: 3 }} name="Restocked" />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
           </CardContent>
         </Card>
 

@@ -1,9 +1,28 @@
 /**
- * Typed API client for the FastAPI ML backend (http://localhost:8000)
+ * Typed API client for the FastAPI ML backend.
+ * Configure host via NEXT_PUBLIC_API_BASE_URL, fallback is localhost.
  * All functions return null if the backend is offline.
  */
 
-const BASE = "http://localhost:8000/api"
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/+$/, "") || "http://localhost:9000"
+const BASE = `${API_BASE}/api`
+const AGENTS_API_KEY = process.env.NEXT_PUBLIC_AGENTS_API_KEY
+
+type PrimitiveQuery = string | number | boolean | null | undefined
+
+export interface ApiResult<T> {
+  ok: boolean
+  status: number
+  data: T | null
+  error: string | null
+}
+
+interface ApiRequestOptions {
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
+  query?: Record<string, PrimitiveQuery>
+  body?: unknown
+  responseType?: "json" | "text"
+}
 
 // ─── Response Types ───────────────────────────────────────────────────────────
 
@@ -118,18 +137,434 @@ export interface ModelOverviewResponse {
   architecture: ArchitectureStep[]
 }
 
+export interface ShapGlobalImportance {
+  feature: string
+  mean_abs_shap: number
+}
+
+export interface ShapLocalContribution {
+  feature: string
+  feature_value: number
+  shap_value: number
+  abs_shap: number
+}
+
+export interface LimeWeight {
+  feature: string
+  weight: number
+}
+
+export interface ExplainabilityResponse {
+  item_id: number
+  item_name: string
+  usage_date: string
+  prediction_id?: number
+  model: string
+  forecast_preview?: ForecastPoint[]
+  feature_snapshot: Array<{
+    feature: string
+    value: number
+  }>
+  shap: {
+    global: {
+      available: boolean
+      importance: ShapGlobalImportance[]
+      sample_size: number
+      error?: string | null
+    }
+    local: {
+      available: boolean
+      base_value: number | null
+      prediction: number | null
+      contributions: ShapLocalContribution[]
+      top_contributions: ShapLocalContribution[]
+      error?: string | null
+    }
+    force_plot: {
+      base_value: number | null
+      prediction: number | null
+      top_features: ShapLocalContribution[]
+    }
+  }
+  lime: {
+    available: boolean
+    prediction: number | null
+    score: number | null
+    weights: LimeWeight[]
+    error?: string | null
+  }
+}
+
+export interface ModelComparisonResponse {
+  primary_model: string
+  lgbm: ModelMetrics
+  lr: ModelMetrics
+  arima: ModelMetrics
+  feature_importance: FeatureImportance[]
+}
+
 export interface DemandItem {
   id: number
   name: string
 }
 
+export interface AgentLogRecord {
+  log_id: number
+  agent_name: string
+  task_description: string
+  status: string
+  level: string
+  created_at: string | null
+  completed_at: string | null
+  result: Record<string, unknown> | null
+  errors: Record<string, unknown> | null
+}
+
+export interface AgentLogsResponse {
+  count: number
+  records: AgentLogRecord[]
+}
+
+export interface AgentDashboardResponse {
+  generated_at: string
+  jobs: {
+    total: number
+    queued: number
+    running: number
+    succeeded: number
+    failed: number
+  }
+  log_counts: Record<string, number>
+  audit: {
+    pending_count: number
+  }
+  logs_preview: AgentLogRecord[]
+}
+
+export interface SupplyChainRequestPayload {
+  risk_threshold: number
+  max_items: number
+  cadence_hours: number
+  supplier_overrides?: Record<string, Array<Record<string, unknown>>>
+}
+
+export interface SupplierRecommendation {
+  supplier_id: number
+  supplier_name: string
+  score: number
+  breakdown?: Record<string, number>
+}
+
+export interface SupplyChainDecision {
+  item_id: number
+  item_name: string
+  risk_prob: number
+  recommended_supplier: SupplierRecommendation
+  recommended_order_qty: number
+  reason: string
+  created_po: {
+    po_id: number
+    supplier_id: number | null
+    order_date: string | null
+    expected_delivery: string | null
+    status: string
+  } | null
+  dispatch: Record<string, unknown> | null
+  tracking: {
+    po_id: number
+    status: string
+    expected_delivery: string | null
+  } | null
+}
+
+export interface SupplyChainResponse {
+  ok: boolean
+  agent: string
+  task?: string
+  result: {
+    risk_threshold: number
+    auto_purchase: boolean
+    cadence_hours: number
+    items_evaluated: number
+    decisions: SupplyChainDecision[]
+    cycle_duration_sec: number
+    performance_target_sec: number
+    sla_under_30s: boolean
+  }
+}
+
+export interface DataIngestionTriggerPayload {
+  source_type: "records" | "csv" | "api"
+  csv_path?: string
+  api_url?: string
+  api_format?: "json" | "xml"
+  records?: Array<Record<string, unknown>>
+  allow_partial?: boolean
+  run_async?: boolean
+  max_retries?: number
+}
+
+export interface DataIngestionTriggerResponse {
+  job_id: string | null
+  status: string
+  status_endpoint?: string
+  result?: Record<string, unknown>
+}
+
+export interface DataIngestionJobStatus {
+  job_id: string
+  status: "queued" | "running" | "succeeded" | "failed" | "completed"
+  created_at?: string
+  started_at?: string
+  completed_at?: string
+  payload?: Record<string, unknown>
+  result?: Record<string, unknown>
+  error?: string
+}
+
+export interface ApprovalAuditEvent {
+  audit_id: number
+  event_type: string
+  previous_status: string | null
+  new_status: string
+  actor: string
+  comment: string | null
+  metadata: Record<string, unknown> | null
+  created_at: string | null
+}
+
+export interface ApprovalQueueItem {
+  po_id: number
+  supplier_id: number | null
+  supplier_name: string | null
+  item_id: number | null
+  item_name: string | null
+  quantity: number | null
+  total_cost: number | null
+  po_status: string
+  approval_level: string
+  approval_status: string
+  escalation_required: boolean
+  approval_reason: string | null
+  score_breakdown: Record<string, unknown> | null
+  rule_snapshot: Record<string, unknown> | null
+  requested_at: string | null
+  due_at: string | null
+  decided_at: string | null
+  decided_by: string | null
+  decision_comment: string | null
+  last_audit_event: {
+    event_type: string
+    new_status: string
+    actor: string
+    comment: string | null
+    created_at: string | null
+  } | null
+}
+
+export interface ApprovalQueueResponse {
+  count: number
+  items: ApprovalQueueItem[]
+}
+
+export interface ApprovalQueueDetailResponse extends ApprovalQueueItem {
+  audit_trail: ApprovalAuditEvent[]
+}
+
+export interface ApprovalDecisionPayload {
+  action: "approve" | "reject"
+  reviewed_by: string
+  reviewer_role: string
+  comment?: string
+}
+
+export interface ApprovalDecisionResponse {
+  po_id: number
+  action: "approve" | "reject"
+  approval_status: string
+  po_status: string
+  reviewed_by: string
+  reviewer_role: string
+  comment: string | null
+  decided_at: string | null
+}
+
+export interface ApprovalTimeoutResponse {
+  count: number
+  items: Array<{
+    po_id: number
+    previous_status: string
+    new_status: string
+  }>
+}
+
+export interface InventorySnapshotResponse {
+  items: Array<{
+    id: string
+    name: string
+    category: string
+    sku: string
+    quantity: number
+    unit: string
+    reorderLevel: number
+    unitPrice: number
+    supplierId: string
+    departmentId: string
+    batchNumber: string
+    expiryDate: string
+    location: string
+    status: string
+    lastRestocked: string
+    notes: string
+  }>
+  suppliers: Array<{
+    id: string
+    name: string
+    contact: string
+    email: string
+    phone: string
+    address: string
+    rating: number
+    itemsSupplied: number
+  }>
+  departments: Array<{
+    id: string
+    name: string
+    head: string
+    budget: number
+    spent: number
+  }>
+  purchaseOrders: Array<{
+    id: string
+    supplierId: string
+    items: Array<{
+      itemId: string
+      itemName: string
+      quantity: number
+      unitPrice: number
+    }>
+    status: string
+    orderDate: string
+    expectedDelivery: string
+    totalAmount: number
+  }>
+  alerts: Array<{
+    id: string
+    type: string
+    severity: string
+    message: string
+    itemId?: string
+    timestamp: string
+    acknowledged: boolean
+  }>
+  activityLogs: Array<{
+    id: string
+    action: string
+    userId: string
+    itemId?: string
+    timestamp: string
+    details: string
+  }>
+}
+
+export interface InventoryMonthlyTrendResponse {
+  months: number
+  points: Array<{
+    month: string
+    consumption: number
+    restocked: number
+  }>
+}
+
+export type InventorySnapshotItem = InventorySnapshotResponse["items"][number]
+export type InventorySnapshotSupplier = InventorySnapshotResponse["suppliers"][number]
+export type InventorySnapshotOrder = InventorySnapshotResponse["purchaseOrders"][number]
+
 // ─── Fetch Helper ─────────────────────────────────────────────────────────────
+
+function buildQuery(query?: Record<string, PrimitiveQuery>): string {
+  if (!query) return ""
+  const params = new URLSearchParams()
+  Object.entries(query).forEach(([key, value]) => {
+    if (value !== null && value !== undefined && value !== "") {
+      params.set(key, String(value))
+    }
+  })
+  const encoded = params.toString()
+  return encoded ? `?${encoded}` : ""
+}
+
+function buildHeaders(hasBody: boolean): HeadersInit {
+  const headers: Record<string, string> = {}
+  if (hasBody) {
+    headers["Content-Type"] = "application/json"
+  }
+  if (AGENTS_API_KEY) {
+    headers["X-API-Key"] = AGENTS_API_KEY
+  }
+  return headers
+}
+
+async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<ApiResult<T>> {
+  const {
+    method = "GET",
+    query,
+    body,
+    responseType = "json",
+  } = options
+
+  try {
+    const hasBody = body !== undefined
+    const res = await fetch(`${BASE}${path}${buildQuery(query)}`, {
+      method,
+      cache: "no-store",
+      headers: buildHeaders(hasBody),
+      body: hasBody ? JSON.stringify(body) : undefined,
+    })
+
+    if (!res.ok) {
+      let errorMessage = `${res.status} ${res.statusText}`
+      try {
+        const errJson = (await res.json()) as { detail?: string }
+        if (errJson?.detail) {
+          errorMessage = errJson.detail
+        }
+      } catch {
+        const text = await res.text()
+        if (text) errorMessage = text
+      }
+      return {
+        ok: false,
+        status: res.status,
+        data: null,
+        error: errorMessage,
+      }
+    }
+
+    const data = responseType === "text"
+      ? ((await res.text()) as T)
+      : ((await res.json()) as T)
+
+    return {
+      ok: true,
+      status: res.status,
+      data,
+      error: null,
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      data: null,
+      error: error instanceof Error ? error.message : "Network request failed",
+    }
+  }
+}
 
 async function apiFetch<T>(path: string): Promise<T | null> {
   try {
-    const res = await fetch(`${BASE}${path}`, { cache: "no-store" })
-    if (!res.ok) return null
-    return (await res.json()) as T
+    const response = await apiRequest<T>(path)
+    return response.ok ? response.data : null
   } catch {
     return null
   }
@@ -144,4 +579,148 @@ export const getStockoutRisk  = () => apiFetch<StockoutRiskResponse>("/stockout-
 export const getExpiryRisk    = () => apiFetch<ExpiryRiskResponse>("/expiry-risk")
 export const getCostSavings   = () => apiFetch<CostSavingsResponse>("/cost-savings")
 export const getModelOverview = () => apiFetch<ModelOverviewResponse>("/model-overview")
+export const getModelComparison = () => apiFetch<ModelComparisonResponse>("/model-comparison")
+export const getExplainItem = (itemId: number, topK = 8) =>
+  apiRequest<ExplainabilityResponse>(`/explain/item/${itemId}`, {
+    query: { top_k: topK },
+  })
+export const getExplainPrediction = (predictionId: number, topK = 8) =>
+  apiRequest<ExplainabilityResponse>(`/explain/prediction/${predictionId}`, {
+    query: { top_k: topK },
+  })
 export const getHealth        = () => apiFetch<{ status: string }>("/health")
+
+export const getAgentsDashboard = () =>
+  apiRequest<AgentDashboardResponse>("/agents/dashboard")
+
+export const getAgentLogs = (params: {
+  agent_name?: string
+  status?: string
+  level?: string
+  q?: string
+  limit?: number
+  offset?: number
+}) =>
+  apiRequest<AgentLogsResponse>("/agents/logs", {
+    query: {
+      export: "json",
+      ...params,
+    },
+  })
+
+export const exportAgentLogsCsv = (params: {
+  agent_name?: string
+  status?: string
+  level?: string
+  q?: string
+  limit?: number
+  offset?: number
+}) =>
+  apiRequest<string>("/agents/logs", {
+    query: {
+      export: "csv",
+      ...params,
+    },
+    responseType: "text",
+  })
+
+export const getSupplyChainAtRisk = (params: {
+  risk_threshold: number
+  max_items: number
+  cadence_hours: number
+}) =>
+  apiRequest<SupplyChainResponse>("/agents/supply-chain/at-risk", {
+    query: params,
+  })
+
+export const optimizeSupplyChain = (payload: SupplyChainRequestPayload) =>
+  apiRequest<SupplyChainResponse>("/agents/supply-chain/optimize", {
+    method: "POST",
+    body: payload,
+  })
+
+export const triggerDataIngestion = (payload: DataIngestionTriggerPayload) =>
+  apiRequest<DataIngestionTriggerResponse>("/agents/data-ingestion", {
+    method: "POST",
+    body: payload,
+  })
+
+export const getDataIngestionStatus = (jobId: string) =>
+  apiRequest<DataIngestionJobStatus>(`/agents/data-ingestion/status/${jobId}`)
+
+export const getApprovalQueue = (params: {
+  status?: string
+  approval_level?: string
+  q?: string
+  limit?: number
+  offset?: number
+}) =>
+  apiRequest<ApprovalQueueResponse>("/approval-queue", {
+    query: params,
+  })
+
+export const getApprovalQueueDetail = (poId: number) =>
+  apiRequest<ApprovalQueueDetailResponse>(`/approval-queue/${poId}`)
+
+export const decideApprovalQueueItem = (poId: number, payload: ApprovalDecisionPayload) =>
+  apiRequest<ApprovalDecisionResponse>(`/approval-queue/${poId}/decision`, {
+    method: "POST",
+    body: payload,
+  })
+
+export const processApprovalTimeouts = () =>
+  apiRequest<ApprovalTimeoutResponse>("/approval-queue/auto-timeout", {
+    method: "POST",
+  })
+
+export const getInventorySnapshot = () =>
+  apiFetch<InventorySnapshotResponse>("/inventory/snapshot")
+
+export const createInventoryItem = (payload: InventorySnapshotItem) =>
+  apiRequest<{ ok: boolean; itemId: string }>("/inventory/items", {
+    method: "POST",
+    body: payload,
+  })
+
+export const updateInventoryItem = (itemId: string, payload: InventorySnapshotItem) =>
+  apiRequest<{ ok: boolean; error?: string }>(`/inventory/items/${itemId}`, {
+    method: "PUT",
+    body: payload,
+  })
+
+export const deleteInventoryItem = (itemId: string) =>
+  apiRequest<{ ok: boolean; error?: string }>(`/inventory/items/${itemId}`, {
+    method: "DELETE",
+  })
+
+export const createInventorySupplier = (payload: InventorySnapshotSupplier) =>
+  apiRequest<{ ok: boolean; supplierId: string }>("/inventory/suppliers", {
+    method: "POST",
+    body: payload,
+  })
+
+export const updateInventorySupplier = (supplierId: string, payload: InventorySnapshotSupplier) =>
+  apiRequest<{ ok: boolean; error?: string }>(`/inventory/suppliers/${supplierId}`, {
+    method: "PUT",
+    body: payload,
+  })
+
+export const deleteInventorySupplier = (supplierId: string) =>
+  apiRequest<{ ok: boolean; error?: string }>(`/inventory/suppliers/${supplierId}`, {
+    method: "DELETE",
+  })
+
+export const createInventoryOrder = (payload: InventorySnapshotOrder) =>
+  apiRequest<{ ok: boolean; orderId: string; error?: string }>("/inventory/orders", {
+    method: "POST",
+    body: payload,
+  })
+
+export const updateInventoryOrderStatus = (orderId: string, status: string) =>
+  apiRequest<{ ok: boolean; status?: string; error?: string }>(`/inventory/orders/${orderId}/status`, {
+    method: "PUT",
+    body: { status },
+  })
+
+export const getInventoryMonthlyTrend = (months = 6) =>
+  apiFetch<InventoryMonthlyTrendResponse>(`/inventory/monthly-trend?months=${months}`)

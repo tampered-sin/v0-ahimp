@@ -1,6 +1,6 @@
 -- =============================================================================
 -- AHIMP – AI-Based Hospital Inventory Management & Prediction
--- Full 14-Table PostgreSQL/SQLite Schema
+-- Full relational schema including ingestion audit quarantine table
 -- =============================================================================
 
 -- ─── 5.1 Master Tables ────────────────────────────────────────────────────────
@@ -60,11 +60,99 @@ CREATE TABLE IF NOT EXISTS Purchase_Orders (
     status            VARCHAR(50)
 );
 
+CREATE TABLE IF NOT EXISTS Purchase_Order_Details (
+    detail_id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    po_id              INTEGER NOT NULL REFERENCES Purchase_Orders(po_id),
+    item_id            INTEGER NOT NULL REFERENCES Items(item_id),
+    quantity           INTEGER NOT NULL,
+    unit_price         REAL NOT NULL,
+    discount_pct       REAL NOT NULL DEFAULT 0,
+    total_cost         REAL NOT NULL,
+    created_by         VARCHAR(100) NOT NULL DEFAULT 'system',
+    approval_required  BOOLEAN NOT NULL DEFAULT FALSE,
+    approval_status    VARCHAR(30) NOT NULL DEFAULT 'APPROVED',
+    submission_method  VARCHAR(30),
+    submission_status  VARCHAR(30),
+    supplier_api_url   VARCHAR(255),
+    submission_payload TEXT,
+    tracking_reference VARCHAR(120),
+    created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS Purchase_Order_Approvals (
+    approval_id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    po_id                 INTEGER NOT NULL UNIQUE REFERENCES Purchase_Orders(po_id),
+    approval_level        VARCHAR(30) NOT NULL DEFAULT 'AUTO',
+    approval_status       VARCHAR(30) NOT NULL DEFAULT 'AUTO_APPROVED',
+    escalation_required   BOOLEAN NOT NULL DEFAULT FALSE,
+    approval_reason       VARCHAR(255),
+    score_breakdown       TEXT,
+    rule_snapshot         TEXT,
+    requested_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    due_at                TIMESTAMP,
+    decided_at            TIMESTAMP,
+    decided_by            VARCHAR(120),
+    decision_comment      VARCHAR(500),
+    notification_alert_id INTEGER,
+    created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS Purchase_Order_Approval_Audit (
+    audit_id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    po_id            INTEGER NOT NULL REFERENCES Purchase_Orders(po_id),
+    event_type       VARCHAR(40) NOT NULL,
+    previous_status  VARCHAR(30),
+    new_status       VARCHAR(30) NOT NULL,
+    actor            VARCHAR(120) NOT NULL DEFAULT 'system',
+    comment          VARCHAR(500),
+    metadata_json    TEXT,
+    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_po_approvals_status ON Purchase_Order_Approvals(approval_status);
+CREATE INDEX IF NOT EXISTS idx_po_approvals_level ON Purchase_Order_Approvals(approval_level);
+CREATE INDEX IF NOT EXISTS idx_po_approval_audit_po_id ON Purchase_Order_Approval_Audit(po_id);
+CREATE INDEX IF NOT EXISTS idx_po_approval_audit_event_type ON Purchase_Order_Approval_Audit(event_type);
+
 CREATE TABLE IF NOT EXISTS Goods_Receipts (
     grn_id        INTEGER PRIMARY KEY AUTOINCREMENT,
     po_id         INTEGER REFERENCES Purchase_Orders(po_id),
     received_date DATE,
     verified_by   VARCHAR(100)
+);
+
+CREATE TABLE IF NOT EXISTS Delivery_Tracking (
+    delivery_id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    po_id                 INTEGER NOT NULL REFERENCES Purchase_Orders(po_id),
+    tracking_reference    VARCHAR(120) NOT NULL UNIQUE,
+    carrier_name          VARCHAR(80),
+    status                VARCHAR(30) NOT NULL DEFAULT 'PENDING',
+    expected_delivery     DATE,
+    actual_delivery       DATE,
+    last_event_code       VARCHAR(50),
+    last_event_message    VARCHAR(255),
+    last_event_at         TIMESTAMP,
+    delay_reason          VARCHAR(255),
+    last_alert_level_sent VARCHAR(30),
+    alert_recipients      VARCHAR(1000),
+    created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS Delivery_Events (
+    event_id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    delivery_id           INTEGER NOT NULL REFERENCES Delivery_Tracking(delivery_id),
+    source                VARCHAR(30) NOT NULL DEFAULT 'manual',
+    external_status_code  VARCHAR(50) NOT NULL,
+    reason_code           VARCHAR(50),
+    normalized_status     VARCHAR(30) NOT NULL,
+    event_message         VARCHAR(255),
+    event_at              TIMESTAMP NOT NULL,
+    raw_payload           TEXT,
+    idempotency_key       VARCHAR(255) NOT NULL UNIQUE,
+    created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ─── 5.4 Core ML Table ───────────────────────────────────────────────────────
@@ -78,6 +166,57 @@ CREATE TABLE IF NOT EXISTS Consumption_Records (
     usage_date     DATE,
     patient_type   VARCHAR(50)
 );
+
+CREATE TABLE IF NOT EXISTS Consumption_Record_Audit (
+    audit_id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id        INTEGER REFERENCES Items(item_id),
+    department_id  INTEGER REFERENCES Departments(department_id),
+    quantity_used  INTEGER,
+    usage_date     DATE,
+    z_score        REAL,
+    severity       VARCHAR(20),
+    reason         VARCHAR(255) NOT NULL,
+    status         VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+    source         VARCHAR(80) NOT NULL DEFAULT 'ingestion_agent',
+    raw_payload    TEXT,
+    reviewed_by    VARCHAR(100),
+    reviewed_at    TIMESTAMP,
+    created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS Agent_Logs (
+    log_id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_name        VARCHAR(120) NOT NULL,
+    task_description  VARCHAR(255) NOT NULL,
+    status            VARCHAR(20) NOT NULL,
+    level             VARCHAR(10) NOT NULL DEFAULT 'INFO',
+    created_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at      TIMESTAMP,
+    result            TEXT,
+    errors            TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_logs_agent ON Agent_Logs(agent_name);
+CREATE INDEX IF NOT EXISTS idx_agent_logs_status ON Agent_Logs(status);
+CREATE INDEX IF NOT EXISTS idx_agent_logs_task_description ON Agent_Logs(task_description);
+
+CREATE TABLE IF NOT EXISTS Escalation_Logs (
+    escalation_id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    triggered_by          VARCHAR(120) NOT NULL,
+    reason                VARCHAR(500) NOT NULL,
+    medicine              VARCHAR(150) NOT NULL,
+    quantity_needed       INTEGER NOT NULL,
+    stockout_risk         REAL NOT NULL,
+    days_until_stockout   INTEGER NOT NULL,
+    suppliers_evaluated   TEXT,
+    recommended_action    VARCHAR(500) NOT NULL,
+    priority              VARCHAR(20) NOT NULL DEFAULT 'HIGH',
+    context               TEXT,
+    created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_escalation_logs_created_at ON Escalation_Logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_escalation_logs_priority ON Escalation_Logs(priority);
 
 -- ─── 5.5 Equipment Tables ────────────────────────────────────────────────────
 

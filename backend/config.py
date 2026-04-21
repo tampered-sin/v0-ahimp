@@ -14,10 +14,11 @@ DATA_DIR = BASE_DIR / "data"
 PKL_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── Database ──────────────────────────────────────────────────────────────────
-# Default: SQLite (zero-setup for dev).  Set DATABASE_URL env var for Postgres.
+# Default: PostgreSQL via Docker (recommended).
+# For SQLite dev fallback: set DATABASE_URL=sqlite:///ahimp.db
 DATABASE_URL: str = os.getenv(
     "DATABASE_URL",
-    f"sqlite:///{BASE_DIR / 'ahimp.db'}"
+    "postgresql://ahimp_user:ahimp_secure_password_2024@localhost:5432/ahimp"
 )
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
