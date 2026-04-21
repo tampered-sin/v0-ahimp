@@ -13,14 +13,19 @@ import {
   Role,
 } from "./types"
 import {
-  inventoryItems as mockItems,
-  suppliers as mockSuppliers,
-  departments as mockDepartments,
-  purchaseOrders as mockOrders,
   users as mockUsers,
-  alerts as mockAlerts,
-  activityLogs as mockLogs,
 } from "./mock-data"
+import { getInventorySnapshot } from "./ml-api"
+import {
+  createInventoryOrder,
+  createInventoryItem,
+  createInventorySupplier,
+  deleteInventoryItem,
+  deleteInventorySupplier,
+  updateInventoryOrderStatus,
+  updateInventoryItem,
+  updateInventorySupplier,
+} from "./ml-api"
 
 interface InventoryState {
   items: InventoryItem[]
@@ -35,6 +40,7 @@ interface InventoryState {
 }
 
 type Action =
+  | { type: "HYDRATE_STATE"; payload: Partial<InventoryState> }
   | { type: "ADD_ITEM"; payload: InventoryItem }
   | { type: "UPDATE_ITEM"; payload: InventoryItem }
   | { type: "DELETE_ITEM"; payload: string }
@@ -52,6 +58,8 @@ type Action =
 
 function inventoryReducer(state: InventoryState, action: Action): InventoryState {
   switch (action.type) {
+    case "HYDRATE_STATE":
+      return { ...state, ...action.payload }
     case "ADD_ITEM":
       return { ...state, items: [...state.items, action.payload] }
     case "UPDATE_ITEM":
@@ -119,6 +127,15 @@ function inventoryReducer(state: InventoryState, action: Action): InventoryState
 interface InventoryContextType {
   state: InventoryState
   dispatch: React.Dispatch<Action>
+  refreshSnapshot: () => Promise<void>
+  addItemPersisted: (item: InventoryItem) => Promise<{ ok: boolean; error?: string }>
+  updateItemPersisted: (item: InventoryItem) => Promise<{ ok: boolean; error?: string }>
+  deleteItemPersisted: (id: string) => Promise<{ ok: boolean; error?: string }>
+  addSupplierPersisted: (supplier: Supplier) => Promise<{ ok: boolean; error?: string }>
+  updateSupplierPersisted: (supplier: Supplier) => Promise<{ ok: boolean; error?: string }>
+  deleteSupplierPersisted: (id: string) => Promise<{ ok: boolean; error?: string }>
+  addOrderPersisted: (order: PurchaseOrder) => Promise<{ ok: boolean; error?: string }>
+  updateOrderStatusPersisted: (orderId: string, status: string) => Promise<{ ok: boolean; error?: string }>
   // Helpers
   getItemById: (id: string) => InventoryItem | undefined
   getSupplierById: (id: string) => Supplier | undefined
@@ -138,19 +155,111 @@ interface InventoryContextType {
 const InventoryContext = createContext<InventoryContextType | null>(null)
 
 const initialState: InventoryState = {
-  items: mockItems,
-  suppliers: mockSuppliers,
-  departments: mockDepartments,
-  purchaseOrders: mockOrders,
+  items: [],
+  suppliers: [],
+  departments: [],
+  purchaseOrders: [],
   users: mockUsers,
-  alerts: mockAlerts,
-  activityLogs: mockLogs,
+  alerts: [],
+  activityLogs: [],
   currentUser: mockUsers[0],
   searchQuery: "",
 }
 
 export function InventoryProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(inventoryReducer, initialState)
+
+  const refreshSnapshot = React.useCallback(async () => {
+    const snapshot = await getInventorySnapshot()
+    if (!snapshot) return
+    dispatch({
+      type: "HYDRATE_STATE",
+      payload: {
+        items: snapshot.items as InventoryItem[],
+        suppliers: snapshot.suppliers as Supplier[],
+        departments: snapshot.departments as Department[],
+        purchaseOrders: snapshot.purchaseOrders as PurchaseOrder[],
+        alerts: snapshot.alerts as Alert[],
+        activityLogs: snapshot.activityLogs as ActivityLog[],
+      },
+    })
+  }, [])
+
+  React.useEffect(() => {
+    void refreshSnapshot()
+  }, [refreshSnapshot])
+
+  const addItemPersisted = React.useCallback(async (item: InventoryItem) => {
+    const res = await createInventoryItem(item)
+    if (!res.ok || !res.data?.ok) {
+      return { ok: false, error: res.error ?? res.data?.error ?? "Failed to create item" }
+    }
+    await refreshSnapshot()
+    return { ok: true }
+  }, [refreshSnapshot])
+
+  const updateItemPersisted = React.useCallback(async (item: InventoryItem) => {
+    const res = await updateInventoryItem(item.id, item)
+    if (!res.ok || !res.data?.ok) {
+      return { ok: false, error: res.error ?? res.data?.error ?? "Failed to update item" }
+    }
+    await refreshSnapshot()
+    return { ok: true }
+  }, [refreshSnapshot])
+
+  const deleteItemPersisted = React.useCallback(async (id: string) => {
+    const res = await deleteInventoryItem(id)
+    if (!res.ok || !res.data?.ok) {
+      return { ok: false, error: res.error ?? res.data?.error ?? "Failed to delete item" }
+    }
+    await refreshSnapshot()
+    return { ok: true }
+  }, [refreshSnapshot])
+
+  const addSupplierPersisted = React.useCallback(async (supplier: Supplier) => {
+    const res = await createInventorySupplier(supplier)
+    if (!res.ok || !res.data?.ok) {
+      return { ok: false, error: res.error ?? res.data?.error ?? "Failed to create supplier" }
+    }
+    await refreshSnapshot()
+    return { ok: true }
+  }, [refreshSnapshot])
+
+  const updateSupplierPersisted = React.useCallback(async (supplier: Supplier) => {
+    const res = await updateInventorySupplier(supplier.id, supplier)
+    if (!res.ok || !res.data?.ok) {
+      return { ok: false, error: res.error ?? res.data?.error ?? "Failed to update supplier" }
+    }
+    await refreshSnapshot()
+    return { ok: true }
+  }, [refreshSnapshot])
+
+  const deleteSupplierPersisted = React.useCallback(async (id: string) => {
+    const res = await deleteInventorySupplier(id)
+    if (!res.ok || !res.data?.ok) {
+      return { ok: false, error: res.error ?? res.data?.error ?? "Failed to delete supplier" }
+    }
+    await refreshSnapshot()
+    return { ok: true }
+  }, [refreshSnapshot])
+
+  const addOrderPersisted = React.useCallback(async (order: PurchaseOrder) => {
+    const res = await createInventoryOrder(order)
+    if (!res.ok || !res.data?.ok) {
+      return { ok: false, error: res.error ?? res.data?.error ?? "Failed to create order" }
+    }
+    await refreshSnapshot()
+    return { ok: true }
+  }, [refreshSnapshot])
+
+  const updateOrderStatusPersisted = React.useCallback(async (orderId: string, status: string) => {
+    const res = await updateInventoryOrderStatus(orderId, status)
+    if (!res.ok || !res.data?.ok) {
+      return { ok: false, error: res.error ?? res.data?.error ?? "Failed to update order status" }
+    }
+    await refreshSnapshot()
+    return { ok: true }
+  }, [refreshSnapshot])
 
   const getItemById = (id: string) => state.items.find((i) => i.id === id)
   const getSupplierById = (id: string) => state.suppliers.find((s) => s.id === id)
@@ -212,6 +321,15 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
       value={{
         state,
         dispatch,
+        refreshSnapshot,
+        addItemPersisted,
+        updateItemPersisted,
+        deleteItemPersisted,
+        addSupplierPersisted,
+        updateSupplierPersisted,
+        deleteSupplierPersisted,
+        addOrderPersisted,
+        updateOrderStatusPersisted,
         getItemById,
         getSupplierById,
         getDepartmentById,

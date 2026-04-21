@@ -202,6 +202,22 @@ class AgentLog(Base):
     errors = Column(JSON, nullable=True)
 
 
+class EscalationLog(Base):
+    __tablename__ = "escalation_logs"
+    escalation_id = Column(Integer, primary_key=True, autoincrement=True)
+    triggered_by = Column(String(120), nullable=False)
+    reason = Column(String(500), nullable=False)
+    medicine = Column(String(150), nullable=False)
+    quantity_needed = Column(Integer, nullable=False)
+    stockout_risk = Column(Float, nullable=False)
+    days_until_stockout = Column(Integer, nullable=False)
+    suppliers_evaluated = Column(JSON, nullable=True)
+    recommended_action = Column(String(500), nullable=False)
+    priority = Column(String(20), nullable=False, default="HIGH")
+    context = Column(JSON, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+
+
 class Equipment(Base):
     __tablename__ = "equipment"
     equipment_id    = Column(Integer, primary_key=True, autoincrement=True)

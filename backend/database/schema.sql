@@ -200,6 +200,24 @@ CREATE INDEX IF NOT EXISTS idx_agent_logs_agent ON Agent_Logs(agent_name);
 CREATE INDEX IF NOT EXISTS idx_agent_logs_status ON Agent_Logs(status);
 CREATE INDEX IF NOT EXISTS idx_agent_logs_task_description ON Agent_Logs(task_description);
 
+CREATE TABLE IF NOT EXISTS Escalation_Logs (
+    escalation_id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    triggered_by          VARCHAR(120) NOT NULL,
+    reason                VARCHAR(500) NOT NULL,
+    medicine              VARCHAR(150) NOT NULL,
+    quantity_needed       INTEGER NOT NULL,
+    stockout_risk         REAL NOT NULL,
+    days_until_stockout   INTEGER NOT NULL,
+    suppliers_evaluated   TEXT,
+    recommended_action    VARCHAR(500) NOT NULL,
+    priority              VARCHAR(20) NOT NULL DEFAULT 'HIGH',
+    context               TEXT,
+    created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_escalation_logs_created_at ON Escalation_Logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_escalation_logs_priority ON Escalation_Logs(priority);
+
 -- ─── 5.5 Equipment Tables ────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS Equipment (

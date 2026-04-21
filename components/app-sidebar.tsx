@@ -13,6 +13,7 @@ import {
   Activity,
   ChevronUp,
   BrainCircuit,
+  FlaskConical,
   Database,
   Bot,
   ShieldCheck,
@@ -50,6 +51,7 @@ const navItems = [
   { title: "Alerts",         url: "/alerts",           icon: Bell },
   { title: "Reports",        url: "/reports",          icon: FileBarChart },
   { title: "AI Predictions", url: "/ai-predictions",   icon: BrainCircuit },
+  { title: "Model Insights", url: "/model-insights",   icon: FlaskConical },
   { title: "Agents",        url: "/agents",           icon: Bot },
   { title: "DB Schema",      url: "/schema",           icon: Database },
 ]

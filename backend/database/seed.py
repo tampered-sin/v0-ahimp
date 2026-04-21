@@ -1,92 +1,311 @@
-"""
-Synthetic data seeder.
+"""High-fidelity synthetic hospital inventory seeder.
 
-Creates departments, suppliers, items, batches, inventory stock, and
-~20 years of daily Consumption_Records derived from the mock inventory items
-used in the Next.js frontend.
+Creates a realistic 12-year data history with:
+- hundreds of medicine/instrument SKUs
+- departments and suppliers with different reliability/lead-time profiles
+- seasonality + surge effects in daily usage
+- inventory, batch, and equipment utilization records
 """
 from __future__ import annotations
 
 import random
+from dataclasses import dataclass
 from datetime import date, timedelta
-from math import sin, pi
+from math import cos, pi, sin
 
 from sqlalchemy.orm import Session
+
 from database.models import (
-    Department, Supplier, Item, Batch,
-    InventoryStock, ConsumptionRecord, Equipment, EquipmentUsage,
+    Batch,
+    ConsumptionRecord,
+    Department,
+    Equipment,
+    EquipmentUsage,
+    InventoryStock,
+    Item,
+    Supplier,
 )
 
-SEED = 42
-random.seed(SEED)
+SEED = 4217
+YEARS_OF_HISTORY = 12
+FORECAST_COMPARISON_YEARS = 2
 
-# ---------------------------------------------------------------------------
-# Raw mock data  (mirrors lib/mock-data.ts so the DB is consistent with UI)
-# ---------------------------------------------------------------------------
+MEDICINE_TARGET = 220
+SUPPLY_TARGET = 90
+EQUIPMENT_TARGET = 30
+
+PATIENT_TYPES = [
+    "Inpatient",
+    "Outpatient",
+    "Emergency",
+    "ICU",
+    "Pediatric",
+    "Oncology",
+    "Dialysis",
+]
+
 DEPARTMENTS = [
-    {"name": "Pharmacy",   "location": "Block A, Floor 1"},
-    {"name": "Surgery",    "location": "Block B, Floor 3"},
-    {"name": "Emergency",  "location": "Block C, Floor 1"},
-    {"name": "ICU",        "location": "Block D, Floor 4"},
-    {"name": "Pediatrics", "location": "Block E, Floor 2"},
-    {"name": "Laboratory", "location": "Block F, Floor 1"},
+    ("Pharmacy", "Block A, Floor 1"),
+    ("Emergency", "Block A, Floor 2"),
+    ("ICU", "Block B, Floor 4"),
+    ("Surgery", "Block B, Floor 3"),
+    ("Cardiology", "Block C, Floor 2"),
+    ("Neurology", "Block C, Floor 3"),
+    ("Oncology", "Block D, Floor 2"),
+    ("Pediatrics", "Block D, Floor 3"),
+    ("Nephrology", "Block E, Floor 2"),
+    ("Laboratory", "Block E, Floor 1"),
+    ("Radiology", "Block F, Floor 1"),
+    ("Blood Bank", "Block F, Floor 2"),
 ]
 
 SUPPLIERS = [
-    {"name": "MedPharm Distributors", "email": "orders@medpharm.com",   "phone": "+1-555-0101", "lead": 7,  "reliability": 0.96},
-    {"name": "SurgiTech Solutions",   "email": "sales@surgitech.com",   "phone": "+1-555-0102", "lead": 10, "reliability": 0.90},
-    {"name": "BioLab Supplies Inc",   "email": "info@biolab.com",       "phone": "+1-555-0103", "lead": 8,  "reliability": 0.84},
-    {"name": "SafeGuard PPE Co",      "email": "supply@safeguard.com",  "phone": "+1-555-0104", "lead": 5,  "reliability": 0.92},
-    {"name": "BloodCare Systems",     "email": "orders@bloodcare.com",  "phone": "+1-555-0105", "lead": 3,  "reliability": 0.98},
-    {"name": "PharmaGlobal Ltd",      "email": "sales@pharmaglobal.com","phone": "+1-555-0106", "lead": 12, "reliability": 0.86},
-    {"name": "OrthoMed Devices",      "email": "info@orthomed.com",     "phone": "+1-555-0107", "lead": 9,  "reliability": 0.94},
-    {"name": "CleanRoom Essentials",  "email": "orders@cleanroom.com",  "phone": "+1-555-0108", "lead": 6,  "reliability": 0.82},
+    ("MediCore Pharma", "medicore.com", 6, 0.97),
+    ("CareChem Therapeutics", "carechem.io", 8, 0.93),
+    ("Apex Hospital Supplies", "apexhs.com", 7, 0.95),
+    ("SterileWave Surgical", "sterilewave.org", 9, 0.92),
+    ("Pulse Biomedical", "pulsebio.net", 10, 0.90),
+    ("Nexus Diagnostics", "nexusdiag.com", 6, 0.94),
+    ("HemoLife Blood Systems", "hemolife.co", 4, 0.98),
+    ("SafeShield PPE", "safeshield.ai", 5, 0.96),
+    ("Global Generic Labs", "gglabs.health", 12, 0.89),
+    ("OrthoPrime Devices", "orthoprime.dev", 11, 0.91),
+    ("CleanRoom Essentials", "cleanroomx.com", 7, 0.88),
+    ("NovaCare Logistics", "novacarelog.com", 9, 0.90),
+    ("BioAxis Clinical", "bioaxis.org", 8, 0.92),
+    ("MediTrack Distribution", "meditrack.io", 6, 0.95),
 ]
 
-ITEMS = [
-    # (name, category, unit, safety_stock, reorder_pt, price, supplier_idx, dept_idx, qty, expiry_str)
-    ("Amoxicillin 500mg",          "Medicines",         "Capsules", 500,  500,  0.45,  0, 0, 2500, "2026-08-15"),
-    ("Ibuprofen 200mg",            "Medicines",         "Tablets",  400,  400,  0.12,  0, 0, 1800, "2026-11-20"),
-    ("Morphine Sulfate 10mg",      "Medicines",         "Vials",    150,  150,  8.50,  5, 3, 120,  "2026-03-10"),
-    ("Epinephrine 1mg/mL",         "Medicines",         "Injectors",100,  100,  35.00, 0, 2, 350,  "2026-06-30"),
-    ("Insulin Glargine 100U/mL",   "Medicines",         "Pens",     100,  100,  42.00, 5, 0, 85,   "2026-04-15"),
-    ("Ceftriaxone 1g",             "Medicines",         "Vials",    200,  200,  3.20,  0, 0, 600,  "2027-01-20"),
-    ("Paracetamol 500mg",          "Medicines",         "Tablets",  1000, 1000, 0.08,  0, 0, 5000, "2027-03-15"),
-    ("Omeprazole 20mg",            "Medicines",         "Capsules", 300,  300,  0.35,  5, 0, 30,   "2026-02-28"),
-    ("Patient Monitor",            "Equipment",         "Units",    5,    5,    4500,  1, 3, 24,   None),
-    ("Infusion Pump",              "Equipment",         "Units",    10,   10,   2800,  1, 3, 45,   None),
-    ("Defibrillator AED",          "Equipment",         "Units",    3,    3,    1200,  1, 2, 8,    None),
-    ("Ventilator (ICU Grade)",     "Equipment",         "Units",    5,    5,    25000, 1, 3, 3,    None),
-    ("Surgical Gloves (Sterile)",  "Surgical Supplies", "Pairs",    2000, 2000, 0.65,  3, 1, 8000, "2027-05-20"),
-    ("Suture Kit (Absorbable)",    "Surgical Supplies", "Kits",     50,   50,   12.50, 1, 1, 250,  "2027-08-30"),
-    ("Scalpel Blades #10",        "Surgical Supplies", "Blades",   100,  100,  0.85,  1, 1, 400,  "2028-01-15"),
-    ("Surgical Drapes (Sterile)",  "Surgical Supplies", "Packs",    60,   60,   8.75,  7, 1, 45,   "2027-04-10"),
-    ("N95 Respirator Masks",       "PPE",               "Masks",    1000, 1000, 1.85,  3, 2, 3500, "2027-12-31"),
-    ("Disposable Gowns",           "PPE",               "Gowns",    300,  300,  2.40,  3, 2, 1200, "2027-10-15"),
-    ("Face Shields",               "PPE",               "Shields",  200,  200,  3.50,  3, 2, 180,  "2028-06-30"),
-    ("Nitrile Exam Gloves (M)",    "PPE",               "Gloves",   5000, 5000, 0.12,  3, 2, 15000,"2028-03-20"),
-    ("Blood Glucose Test Strips",  "Lab Reagents",      "Strips",   500,  500,  0.55,  2, 5, 2000, "2026-09-30"),
-    ("PCR Reagent Kit",            "Lab Reagents",      "Kits",     20,   20,   285.0, 2, 5, 15,   "2026-04-20"),
-    ("Packed RBC (O+)",            "Blood Bank",        "Units",    30,   30,   225.0, 4, 1, 45,   "2026-03-15"),
-    ("Fresh Frozen Plasma (AB)",   "Blood Bank",        "Units",    15,   15,   180.0, 4, 1, 12,   "2026-08-20"),
-    ("Platelet Concentrate",       "Blood Bank",        "Units",    10,   10,   550.0, 4, 1, 8,    "2026-02-20"),
-    ("Warfarin 5mg",               "Medicines",         "Tablets",  200,  200,  0.18,  5, 0, 0,    "2027-02-28"),
-    ("Aspirin 81mg",               "Medicines",         "Tablets",  500,  500,  0.05,  0, 0, 3000, "2027-06-15"),
-    ("Metformin 500mg",            "Medicines",         "Tablets",  300,  300,  0.15,  5, 0, 1500, "2027-09-30"),
+MEDICINE_MOLECULES = [
+    "Amoxicillin", "Azithromycin", "Ceftriaxone", "Meropenem", "Piperacillin-Tazobactam",
+    "Paracetamol", "Ibuprofen", "Diclofenac", "Tramadol", "Morphine Sulfate",
+    "Insulin Glargine", "Insulin Regular", "Metformin", "Glimepiride", "Empagliflozin",
+    "Amlodipine", "Losartan", "Telmisartan", "Metoprolol", "Atorvastatin",
+    "Rosuvastatin", "Clopidogrel", "Aspirin", "Warfarin", "Apixaban",
+    "Heparin", "Enoxaparin", "Pantoprazole", "Omeprazole", "Esomeprazole",
+    "Ondansetron", "Domperidone", "Metoclopramide", "Levothyroxine", "Prednisolone",
+    "Dexamethasone", "Hydrocortisone", "Salbutamol", "Budesonide", "Montelukast",
+    "Linezolid", "Vancomycin", "Levofloxacin", "Ciprofloxacin", "Doxycycline",
+    "Fluconazole", "Amphotericin", "Acyclovir", "Remdesivir", "Oseltamivir",
+    "Epinephrine", "Norepinephrine", "Dopamine", "Dobutamine", "Nitroglycerin",
+    "Furosemide", "Spironolactone", "Mannitol", "Albumin", "Calcium Gluconate",
+    "Magnesium Sulfate", "Potassium Chloride", "Sodium Bicarbonate", "Phenytoin", "Levetiracetam",
+    "Valproate", "Haloperidol", "Risperidone", "Sertraline", "Escitalopram",
+    "Olanzapine", "Ketamine", "Propofol", "Midazolam", "Fentanyl",
+    "Rocuronium", "Atracurium", "Lignocaine", "Bupivacaine", "Tranexamic Acid",
+    "Oxytocin", "Misoprostol", "Methotrexate", "Cyclophosphamide", "Paclitaxel",
+    "Cisplatin", "Carboplatin", "Rituximab", "Trastuzumab", "Filgrastim",
 ]
 
-PATIENT_TYPES = ["Inpatient", "Outpatient", "Emergency", "ICU", "Pediatric"]
+SUPPLY_NAMES = [
+    "Surgical Gloves Sterile", "Suture Kit Absorbable", "Scalpel Blade No.10",
+    "Surgical Drapes", "Gauze Swab", "Adhesive Bandage", "IV Cannula",
+    "Syringe 5mL", "Syringe 10mL", "Blood Collection Tube", "Urine Collection Bag",
+    "N95 Respirator", "Face Shield", "Disposable Gown", "Shoe Cover",
+    "PCR Reagent Kit", "Rapid Antigen Kit", "Glucose Test Strip", "CRP Test Cartridge",
+    "Dialyzer Cartridge", "ECG Electrode", "Ultrasound Gel", "Catheter Foley",
+    "Endotracheal Tube", "Nebulizer Mask", "Central Line Kit", "Suction Catheter",
+    "Arterial Blood Gas Syringe", "Platelet Storage Bag", "Blood Transfusion Set",
+]
+
+EQUIPMENT_NAMES = [
+    "Patient Monitor", "Infusion Pump", "Defibrillator AED", "Ventilator ICU",
+    "Portable Ultrasound", "ECG Machine", "Anesthesia Workstation", "Suction Unit",
+    "Dialysis Machine", "Blood Warmer", "Syringe Pump", "Transport Ventilator",
+    "Fetal Monitor", "Electrocautery Unit", "Pulse Oximeter", "Crash Cart",
+]
 
 
-def _daily_demand(base: int, day_idx: int) -> int:
-    """Simulate realistic demand with weekly + annual seasonality + noise."""
-    # Weekly cycle: higher mid-week
-    weekly   = 1 + 0.15 * sin(2 * pi * (day_idx % 7) / 7)
-    # Annual cycle: higher in winter months
-    annual   = 1 + 0.10 * sin(2 * pi * day_idx / 365)
-    noise    = random.gauss(0, 0.08)
-    demand   = max(0, int(base * (weekly + annual + noise)))
-    return demand
+@dataclass
+class ItemBlueprint:
+    name: str
+    category: str
+    unit_type: str
+    safety_stock_level: int
+    reorder_point: int
+    purchase_price: float
+    supplier_idx: int
+    department_idx: int
+    opening_quantity: int
+    is_consumable: bool
+    shelf_life_days: int | None
+
+
+def _generate_suppliers() -> list[dict[str, object]]:
+    records: list[dict[str, object]] = []
+    for idx, (name, domain, lead, reliability) in enumerate(SUPPLIERS, start=1):
+        records.append(
+            {
+                "name": name,
+                "email": f"orders@{domain}",
+                "phone": f"+1-555-{1200 + idx:04d}",
+                "lead": lead,
+                "reliability": reliability,
+            }
+        )
+    return records
+
+
+def _build_medicine_blueprints(rng: random.Random) -> list[ItemBlueprint]:
+    forms = [
+        ("Tablets", ["5mg", "10mg", "20mg", "50mg", "100mg"], 0.12, 1.8),
+        ("Capsules", ["100mg", "250mg", "500mg"], 0.22, 2.2),
+        ("Vials", ["250mg", "500mg", "1g"], 2.0, 45.0),
+        ("Injectors", ["1mg/mL", "2mg/mL"], 15.0, 90.0),
+        ("Pens", ["100U/mL"], 18.0, 130.0),
+    ]
+    items: list[ItemBlueprint] = []
+    name_seen: set[str] = set()
+
+    while len(items) < MEDICINE_TARGET:
+        molecule = rng.choice(MEDICINE_MOLECULES)
+        form, strengths, price_min, price_max = rng.choice(forms)
+        strength = rng.choice(strengths)
+        item_name = f"{molecule} {strength}"
+        if item_name in name_seen:
+            continue
+
+        name_seen.add(item_name)
+        reorder = rng.randint(180, 1400)
+        # Keep safety stock below full-week expected demand for a subset of SKUs
+        # so stockout labels contain both positive and negative classes.
+        safety = int(reorder * rng.uniform(0.45, 0.95))
+        opening = int(reorder * rng.uniform(2.0, 7.5))
+
+        items.append(
+            ItemBlueprint(
+                name=item_name,
+                category="Medicines",
+                unit_type=form,
+                safety_stock_level=safety,
+                reorder_point=reorder,
+                purchase_price=round(rng.uniform(price_min, price_max), 2),
+                supplier_idx=rng.randrange(len(SUPPLIERS)),
+                department_idx=rng.randrange(len(DEPARTMENTS)),
+                opening_quantity=opening,
+                is_consumable=True,
+                shelf_life_days=rng.randint(365, 1095),
+            )
+        )
+
+    return items
+
+
+def _build_supply_blueprints(rng: random.Random) -> list[ItemBlueprint]:
+    unit_map = {
+        "Surgical Gloves Sterile": "Pairs",
+        "Suture Kit Absorbable": "Kits",
+        "Scalpel Blade No.10": "Blades",
+        "Surgical Drapes": "Packs",
+        "Gauze Swab": "Packs",
+        "Adhesive Bandage": "Boxes",
+        "IV Cannula": "Units",
+        "Syringe 5mL": "Units",
+        "Syringe 10mL": "Units",
+        "Blood Collection Tube": "Tubes",
+        "Urine Collection Bag": "Units",
+        "N95 Respirator": "Masks",
+        "Face Shield": "Shields",
+        "Disposable Gown": "Gowns",
+        "Shoe Cover": "Pairs",
+        "PCR Reagent Kit": "Kits",
+        "Rapid Antigen Kit": "Kits",
+        "Glucose Test Strip": "Strips",
+        "CRP Test Cartridge": "Cartridges",
+        "Dialyzer Cartridge": "Cartridges",
+        "ECG Electrode": "Packs",
+        "Ultrasound Gel": "Bottles",
+        "Catheter Foley": "Units",
+        "Endotracheal Tube": "Units",
+        "Nebulizer Mask": "Units",
+        "Central Line Kit": "Kits",
+        "Suction Catheter": "Units",
+        "Arterial Blood Gas Syringe": "Units",
+        "Platelet Storage Bag": "Units",
+        "Blood Transfusion Set": "Units",
+    }
+
+    items: list[ItemBlueprint] = []
+    for idx in range(SUPPLY_TARGET):
+        base = SUPPLY_NAMES[idx % len(SUPPLY_NAMES)]
+        variant = idx // len(SUPPLY_NAMES) + 1
+        name = base if variant == 1 else f"{base} Type-{variant}"
+        category = "PPE" if any(x in base for x in ["Mask", "Shield", "Gown", "Gloves", "Shoe"]) else "Surgical Supplies"
+        if any(x in base for x in ["PCR", "Antigen", "CRP", "Glucose"]):
+            category = "Lab Reagents"
+
+        reorder = rng.randint(120, 2200)
+        safety = int(reorder * rng.uniform(0.50, 1.00))
+        opening = int(reorder * rng.uniform(1.8, 6.0))
+
+        items.append(
+            ItemBlueprint(
+                name=name,
+                category=category,
+                unit_type=unit_map.get(base, "Units"),
+                safety_stock_level=safety,
+                reorder_point=reorder,
+                purchase_price=round(rng.uniform(0.15, 75.0), 2),
+                supplier_idx=rng.randrange(len(SUPPLIERS)),
+                department_idx=rng.randrange(len(DEPARTMENTS)),
+                opening_quantity=opening,
+                is_consumable=True,
+                shelf_life_days=rng.randint(300, 1500),
+            )
+        )
+
+    return items
+
+
+def _build_equipment_blueprints(rng: random.Random) -> list[ItemBlueprint]:
+    items: list[ItemBlueprint] = []
+    for idx in range(EQUIPMENT_TARGET):
+        base = EQUIPMENT_NAMES[idx % len(EQUIPMENT_NAMES)]
+        variant = idx // len(EQUIPMENT_NAMES) + 1
+        name = base if variant == 1 else f"{base} Gen-{variant}"
+
+        items.append(
+            ItemBlueprint(
+                name=name,
+                category="Equipment",
+                unit_type="Units",
+                safety_stock_level=rng.randint(2, 12),
+                reorder_point=rng.randint(2, 12),
+                purchase_price=round(rng.uniform(1200.0, 55000.0), 2),
+                supplier_idx=rng.randrange(len(SUPPLIERS)),
+                department_idx=rng.randrange(len(DEPARTMENTS)),
+                opening_quantity=rng.randint(2, 40),
+                is_consumable=False,
+                shelf_life_days=None,
+            )
+        )
+
+    return items
+
+
+def _seasonal_multiplier(category: str, day_index: int) -> float:
+    weekly = 1.0 + 0.10 * sin(2 * pi * (day_index % 7) / 7)
+    annual = 1.0 + 0.14 * sin(2 * pi * day_index / 365)
+    quarterly = 1.0 + 0.04 * cos(2 * pi * day_index / 90)
+
+    category_bias = {
+        "Medicines": 1.0,
+        "Surgical Supplies": 0.95,
+        "PPE": 0.9,
+        "Lab Reagents": 0.8,
+        "Blood Bank": 0.75,
+        "Equipment": 0.15,
+    }.get(category, 0.9)
+
+    return max(0.05, weekly * annual * quarterly * category_bias)
+
+
+def _surge_multiplier(day_index: int, rng: random.Random) -> float:
+    # Simulate occasional outbreaks/high occupancy waves.
+    annual_day = day_index % 365
+    seasonal_wave = 1.15 if annual_day in range(320, 365) or annual_day in range(0, 45) else 1.0
+    random_surge = 1.0 + max(0.0, rng.gauss(0, 0.03))
+    return seasonal_wave * random_surge
 
 
 def seed(db: Session) -> None:
@@ -95,120 +314,173 @@ def seed(db: Session) -> None:
         print("Database already seeded – skipping.")
         return
 
-    print("Seeding database …")
+    rng = random.Random(SEED)
+    print(
+        "Seeding database with realistic 12-year hospital inventory data "
+        f"(includes {FORECAST_COMPARISON_YEARS}-year holdout for forecast comparison) …"
+    )
 
-    # ── Departments ──────────────────────────────────────────────────────────
-    depts = []
-    for d in DEPARTMENTS:
-        dep = Department(department_name=d["name"], location=d["location"])
-        db.add(dep); depts.append(dep)
+    # Departments
+    dept_rows: list[Department] = []
+    for name, location in DEPARTMENTS:
+        dep = Department(department_name=name, location=location)
+        db.add(dep)
+        dept_rows.append(dep)
     db.flush()
 
-    # ── Suppliers ────────────────────────────────────────────────────────────
-    sups = []
-    for s in SUPPLIERS:
-        sup = Supplier(
-            supplier_name=s["name"], contact_email=s["email"],
-            contact_phone=s["phone"], avg_lead_time_days=s["lead"],
-            reliability_score=s["reliability"],
+    # Suppliers
+    supplier_rows: list[Supplier] = []
+    for row in _generate_suppliers():
+        supplier = Supplier(
+            supplier_name=row["name"],
+            contact_email=row["email"],
+            contact_phone=row["phone"],
+            avg_lead_time_days=row["lead"],
+            reliability_score=row["reliability"],
         )
-        db.add(sup); sups.append(sup)
+        db.add(supplier)
+        supplier_rows.append(supplier)
     db.flush()
 
-    # ── Items + Batches + Stock ───────────────────────────────────────────────
-    today        = date.today()
-    start_date   = date(today.year - 20, today.month, today.day)
+    # Item catalog (hundreds of unique medicines/instruments)
+    catalog = []
+    catalog.extend(_build_medicine_blueprints(rng))
+    catalog.extend(_build_supply_blueprints(rng))
+    catalog.extend(_build_equipment_blueprints(rng))
+    rng.shuffle(catalog)
 
-    item_objs = []
-    batch_map: dict[int, int] = {}  # item_idx → batch_id
+    today = date.today()
+    start_date = today - timedelta(days=YEARS_OF_HISTORY * 365)
+    total_days = (today - start_date).days
 
-    for idx, row in enumerate(ITEMS):
-        name, cat, unit, safety, reorder, price, sup_idx, dept_idx, qty, exp = row
+    item_rows: list[tuple[Item, ItemBlueprint]] = []
+    batch_by_item_id: dict[int, int] = {}
 
+    for blueprint in catalog:
         item = Item(
-            item_name=name, category=cat, unit_type=unit,
-            safety_stock_level=safety, reorder_point=reorder,
+            item_name=blueprint.name,
+            category=blueprint.category,
+            unit_type=blueprint.unit_type,
+            safety_stock_level=blueprint.safety_stock_level,
+            reorder_point=blueprint.reorder_point,
         )
-        db.add(item); db.flush()
+        db.add(item)
+        db.flush()
 
-        exp_date = date.fromisoformat(exp) if exp else date(today.year + 3, 1, 1)
+        expiry_date = None
+        if blueprint.shelf_life_days is not None:
+            # Keep a realistic minority of consumable batches close to expiry so
+            # expiry-risk labels contain both positive and negative classes.
+            if blueprint.is_consumable and rng.random() < 0.18:
+                remaining_days = rng.randint(5, 14)
+            else:
+                remaining_days = rng.randint(
+                    min(90, blueprint.shelf_life_days),
+                    blueprint.shelf_life_days,
+                )
+            expiry_date = today + timedelta(days=remaining_days)
+
         batch = Batch(
-            item_id=item.item_id, supplier_id=sups[sup_idx].supplier_id,
-            manufacture_date=date(today.year - 1, 6, 1),
-            expiry_date=exp_date,
-            purchase_price=price, quantity_received=qty + random.randint(0, qty // 2 + 1),
+            item_id=item.item_id,
+            supplier_id=supplier_rows[blueprint.supplier_idx].supplier_id,
+            manufacture_date=today - timedelta(days=rng.randint(40, 450)),
+            expiry_date=expiry_date,
+            purchase_price=blueprint.purchase_price,
+            quantity_received=max(
+                blueprint.opening_quantity + rng.randint(0, blueprint.opening_quantity // 2 + 1),
+                blueprint.opening_quantity,
+            ),
         )
-        db.add(batch); db.flush()
+        db.add(batch)
+        db.flush()
 
         stock = InventoryStock(
-            item_id=item.item_id, batch_id=batch.batch_id,
-            department_id=depts[dept_idx].department_id,
-            current_quantity=qty,
+            item_id=item.item_id,
+            batch_id=batch.batch_id,
+            department_id=dept_rows[blueprint.department_idx].department_id,
+            current_quantity=blueprint.opening_quantity,
         )
         db.add(stock)
-        item_objs.append(item)
-        batch_map[idx] = batch.batch_id
+
+        item_rows.append((item, blueprint))
+        batch_by_item_id[item.item_id] = batch.batch_id
 
     db.flush()
 
-    # ── Equipment (optional module) ───────────────────────────────────────────
-    equip_rows = [
-        ("Patient Monitor",  "PM-001", 3, date(2022, 6, 1), date(today.year, 6, 1)),
-        ("Infusion Pump",    "IP-001", 3, date(2022, 9, 1), date(today.year, 9, 1)),
-        ("Ventilator",       "VN-001", 3, date(2023, 1, 1), date(today.year + 1, 1, 1)),
-        ("Defibrillator",    "DF-001", 2, date(2021, 11, 1),date(today.year, 11, 1)),
-    ]
-    equip_objs = []
-    for ename, serial, didx, pdate, mdue in equip_rows:
-        e = Equipment(
-            equipment_name=ename, serial_number=serial,
-            department_id=depts[didx].department_id,
-            purchase_date=pdate, maintenance_due=mdue,
+    # Equipment table rows (for equipment items)
+    equipment_rows: list[Equipment] = []
+    for item, blueprint in item_rows:
+        if blueprint.category != "Equipment":
+            continue
+        equipment = Equipment(
+            equipment_name=blueprint.name,
+            serial_number=f"{item.item_id:05d}-{rng.randint(1000, 9999)}",
+            department_id=dept_rows[blueprint.department_idx].department_id,
+            purchase_date=today - timedelta(days=rng.randint(180, 2200)),
+            maintenance_due=today + timedelta(days=rng.randint(30, 365)),
         )
-        db.add(e); db.flush()
-        equip_objs.append(e)
+        db.add(equipment)
+        db.flush()
+        equipment_rows.append(equipment)
 
-    # Equipment usage – 1 record/day for last 90 days
-    for e in equip_objs:
-        for d in range(90):
-            eu = EquipmentUsage(
-                equipment_id=e.equipment_id,
-                usage_date=today - timedelta(days=d),
-                usage_hours=round(random.uniform(4.0, 20.0), 1),
+    # Equipment usage for last 365 days
+    for equipment in equipment_rows:
+        for day_offset in range(365):
+            usage = EquipmentUsage(
+                equipment_id=equipment.equipment_id,
+                usage_date=today - timedelta(days=day_offset),
+                usage_hours=round(max(0.5, rng.gauss(9.5, 3.0)), 1),
             )
-            db.add(eu)
+            db.add(usage)
 
-    # ── Consumption Records (≈20 years daily) ─────────────────────────────────
-    total_days = (today - start_date).days
-    BATCH_SIZE = 500
-    count = 0
+    # Consumption records over 10 years
+    consumption_count = 0
+    flush_every = 2500
 
-    for item_idx, item in enumerate(item_objs):
-        # Equipment items: almost zero daily consumption
-        is_equipment = ITEMS[item_idx][1] == "Equipment"
-        base_demand  = max(1, ITEMS[item_idx][7 + 1] // 30) if not is_equipment else 0
+    for item, blueprint in item_rows:
+        if not blueprint.is_consumable:
+            continue
 
-        dept_id  = depts[ITEMS[item_idx][7]].department_id
-        batch_id = batch_map[item_idx]
+        dept_id = dept_rows[blueprint.department_idx].department_id
+        batch_id = batch_by_item_id[item.item_id]
+
+        # Demand intensity calibrated to create realistic replenishment pressure.
+        base_daily = max(1.0, blueprint.reorder_point / 11.0)
 
         for day_offset in range(total_days):
-            usage_date = start_date + timedelta(days=day_offset)
-            qty_used   = _daily_demand(base_demand, day_offset)
-            if qty_used == 0:
+            day = start_date + timedelta(days=day_offset)
+            seasonal = _seasonal_multiplier(blueprint.category, day_offset)
+            surge = _surge_multiplier(day_offset, rng)
+            noise = max(0.2, 1.0 + rng.gauss(0, 0.12))
+
+            expected = base_daily * seasonal * surge * noise
+            qty_used = int(max(0, round(expected)))
+
+            # Keep sparse low-volume usage for specialty categories.
+            if blueprint.category in {"Blood Bank", "Lab Reagents"} and rng.random() < 0.55:
+                qty_used = int(max(0, round(qty_used * 0.4)))
+
+            if qty_used <= 0:
                 continue
 
-            cr = ConsumptionRecord(
+            record = ConsumptionRecord(
                 item_id=item.item_id,
                 batch_id=batch_id,
                 department_id=dept_id,
                 quantity_used=qty_used,
-                usage_date=usage_date,
-                patient_type=random.choice(PATIENT_TYPES),
+                usage_date=day,
+                patient_type=rng.choice(PATIENT_TYPES),
             )
-            db.add(cr)
-            count += 1
-            if count % BATCH_SIZE == 0:
+            db.add(record)
+            consumption_count += 1
+
+            if consumption_count % flush_every == 0:
                 db.flush()
 
     db.commit()
-    print(f"Seeding complete – {count:,} consumption records created.")
+    print(
+        "Seeding complete – "
+        f"{len(item_rows)} items, {len(equipment_rows)} equipment assets, "
+        f"{consumption_count:,} consumption records over {YEARS_OF_HISTORY} years "
+        f"({YEARS_OF_HISTORY - FORECAST_COMPARISON_YEARS}y baseline + {FORECAST_COMPARISON_YEARS}y comparison)."
+    )

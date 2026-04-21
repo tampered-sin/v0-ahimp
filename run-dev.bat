@@ -48,15 +48,15 @@ if /I not "!PG_HEALTH!"=="healthy" (
 )
 
 if exist "%PYTHON_EXE%" (
-  start "AHIMP Backend" powershell -NoExit -Command "Set-Location '%BACKEND_DIR%'; $env:DATABASE_URL='%POSTGRES_URL%'; & '%PYTHON_EXE%' -m uvicorn main:app --reload --port 8000"
+  start "AHIMP Backend" powershell -NoExit -Command "Set-Location '%BACKEND_DIR%'; $env:DATABASE_URL='%POSTGRES_URL%'; & '%PYTHON_EXE%' -m uvicorn main:app --reload --port 9000"
 ) else (
-  start "AHIMP Backend" powershell -NoExit -Command "Set-Location '%BACKEND_DIR%'; $env:DATABASE_URL='%POSTGRES_URL%'; python -m uvicorn main:app --reload --port 8000"
+  start "AHIMP Backend" powershell -NoExit -Command "Set-Location '%BACKEND_DIR%'; $env:DATABASE_URL='%POSTGRES_URL%'; python -m uvicorn main:app --reload --port 9000"
 )
 
 start "AHIMP Frontend" powershell -NoExit -Command "Set-Location '%ROOT%'; %FRONTEND_CMD%"
 
 echo Started backend and frontend.
 echo PostgreSQL: docker service 'postgres' (container: ahimp_postgres)
-echo Backend: http://localhost:8000
+echo Backend: http://localhost:9000
 echo Frontend: http://localhost:3000
 echo Close both PowerShell windows to stop the servers.

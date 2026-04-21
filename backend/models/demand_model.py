@@ -11,6 +11,7 @@ Metrics: MAE, RMSE, R²
 from __future__ import annotations
 
 import pickle
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -43,6 +44,80 @@ TARGET_COL = "quantity_used"
 PKL_LGBM = PKL_DIR / "demand_lgbm.pkl"
 PKL_LR  = PKL_DIR / "demand_lr.pkl"
 PKL_META = PKL_DIR / "demand_meta.pkl"
+
+
+def _evaluate_arima_baseline(feat_df: pd.DataFrame) -> tuple[dict | None, str | None]:
+    """
+    Evaluate ARIMA on aggregated daily demand with safe fallbacks.
+    Returns (metrics, error).
+    """
+    if not ARIMA_AVAILABLE:
+        return None, "statsmodels ARIMA is unavailable"
+
+    series_df = feat_df[["usage_date", TARGET_COL]].dropna().copy()
+    if series_df.empty:
+        return None, "no usable demand time-series rows"
+
+    series_df["usage_date"] = pd.to_datetime(series_df["usage_date"], errors="coerce")
+    series_df = series_df.dropna(subset=["usage_date"])
+    if series_df.empty:
+        return None, "usage_date could not be parsed"
+
+    ts = (
+        series_df.groupby("usage_date")[TARGET_COL]
+        .sum()
+        .sort_index()
+        .astype(float)
+    )
+
+    if len(ts) < 30:
+        return None, f"insufficient history for ARIMA: {len(ts)} points"
+
+    split = int(len(ts) * 0.8)
+    split = max(20, min(split, len(ts) - 7))
+    train_ts = ts.iloc[:split]
+    test_ts = ts.iloc[split:]
+
+    if len(test_ts) < 7:
+        return None, f"insufficient holdout window for ARIMA: {len(test_ts)} points"
+
+    candidate_orders = [(2, 1, 2), (1, 1, 1), (1, 0, 1)]
+    best_metrics = None
+    best_mae = float("inf")
+    errors: list[str] = []
+
+    for order in candidate_orders:
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                model = ARIMA(train_ts, order=order)
+                fitted = model.fit()
+
+            y_pred = np.asarray(fitted.forecast(steps=len(test_ts)), dtype=float)
+            y_true = test_ts.to_numpy(dtype=float)
+
+            mae = float(mean_absolute_error(y_true, y_pred))
+            rmse = float(np.sqrt(mean_squared_error(y_true, y_pred)))
+            r2 = float(r2_score(y_true, y_pred))
+
+            if mae < best_mae:
+                best_mae = mae
+                best_metrics = {
+                    "mae": mae,
+                    "rmse": rmse,
+                    "r2": r2,
+                    "order": list(order),
+                    "series_points": int(len(ts)),
+                    "holdout_points": int(len(test_ts)),
+                }
+        except Exception as exc:
+            errors.append(f"order={order}: {exc}")
+
+    if best_metrics is None:
+        short_error = "; ".join(errors[:2]) if errors else "unknown ARIMA failure"
+        return None, short_error
+
+    return best_metrics, None
 
 
 # ─── Training ────────────────────────────────────────────────────────────────
@@ -81,26 +156,17 @@ def train(feat_df: pd.DataFrame) -> dict:
     with open(PKL_LR, "wb") as f:
         pickle.dump(lr, f)
 
-    # ── ARIMA (on first item's time series) ──────────────────────────────────
-    mae_arima = rmse_arima = r2_arima = None
-    if ARIMA_AVAILABLE:
-        try:
-            first_item = feat_df.groupby("item_id").first().index[0]
-            ts = (
-                feat_df[feat_df["item_id"] == first_item]
-                .sort_values("usage_date")["quantity_used"]
-                .values
-            )
-            split = int(len(ts) * 0.8)
-            model = ARIMA(ts[:split], order=(2, 1, 2))
-            res   = model.fit()
-            y_ar  = res.forecast(len(ts) - split)
-            mae_arima  = float(mean_absolute_error(ts[split:], y_ar))
-            rmse_arima = float(np.sqrt(mean_squared_error(ts[split:], y_ar)))
-            # ARIMA r2 can be negative; clip for display
-            r2_arima   = float(r2_score(ts[split:], y_ar))
-        except Exception:
-            pass
+    # ── ARIMA baseline on aggregate demand ───────────────────────────────────
+    arima_metrics, arima_error = _evaluate_arima_baseline(feat_df)
+    arima_payload = {
+        "mae": None,
+        "rmse": None,
+        "r2": None,
+    }
+    if arima_metrics:
+        arima_payload.update(arima_metrics)
+    if arima_error:
+        arima_payload["error"] = arima_error
 
     # ── Feature importance ───────────────────────────────────────────────────
     importance = [
@@ -120,7 +186,7 @@ def train(feat_df: pd.DataFrame) -> dict:
             "cv_r2_mean": float(np.mean(cv_r2_scores)) if cv_r2_scores else None,
         },
         "lr":  {"mae": mae_lr,   "rmse": rmse_lr,    "r2": r2_lr},
-        "arima": {"mae": mae_arima, "rmse": rmse_arima, "r2": r2_arima},
+        "arima": arima_payload,
         "feature_importance": importance,
         "feature_cols": FEATURE_COLS,
         "primary_model": "LightGBM",
@@ -202,7 +268,7 @@ def _iterative_forecast(
 def predict_forecast(feat_df: pd.DataFrame, item_id: int) -> dict:
     """
     Generate a 14-day demand forecast for a specific item.
-    Uses XGBoost iteratively with rolling feature updates.
+    Uses LightGBM iteratively with rolling feature updates.
     """
     lgbm = _load_lgbm()
     meta = _load_meta()

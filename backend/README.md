@@ -22,9 +22,9 @@ docker-compose up --build
 # First boot will:
 # 1. Start PostgreSQL container
 # 2. Create database & tables
-# 3. Seed 20 years of daily consumption (~7.3M records)
-# 4. Train LightGBM models (<5 minutes for 7.3M records)
-# 5. Serve API at http://localhost:8000
+# 3. Seed 10 years of daily consumption (high-fidelity synthetic history)
+# 4. Train demand/stockout/expiry models on generated history
+# 5. Serve API at http://localhost:9000
 
 # Check logs:
 docker-compose logs -f backend
@@ -45,7 +45,7 @@ python -m venv .venv
 pip install -r requirements.txt
 
 # Start the server (uses SQLite ahimp.db locally)
-uvicorn main:app --reload --port 8000
+uvicorn main:app --reload --port 9000
 ```
 
 ## Run Frontend + Backend Together (Windows)
@@ -59,7 +59,7 @@ run-dev.bat
 This single launcher starts two PowerShell windows:
 
 - frontend (`pnpm dev` or fallback `npm run dev`) on `http://localhost:3000`
-- backend (`uvicorn main:app --reload --port 8000`) on `http://localhost:8000`
+- backend (`uvicorn main:app --reload --port 9000`) on `http://localhost:9000`
 
 `run-dev.bat` also starts Docker PostgreSQL (`postgres` service from `docker-compose.yml`) and waits for container health before launching backend.
 
@@ -69,9 +69,9 @@ For launcher consistency, `run-dev.bat` sets backend `DATABASE_URL` to:
 
 On first boot the server will automatically:
 1. Create the SQLite database (`ahimp.db`)
-2. Seed all 14 tables with synthetic data (~20 years of daily consumption)
-3. Train all 3 ML models (takes ~5-10 minutes for 7.3M records)
-4. Serve the API at **http://localhost:8000**
+2. Seed core tables with realistic synthetic data (10 years, 340 item types)
+3. Train all 3 ML models on generated history
+4. Serve the API at **http://localhost:9000**
 
 ## Local Ollama Setup for Agents
 
@@ -138,7 +138,7 @@ CREW_LOG_LEVEL=INFO
 | GET | `/api/model-overview` | LightGBM metrics + SHAP feature importance + pipeline |
 | GET | `/api/model-comparison` | Compare LightGBM vs Linear Regression vs ARIMA |
 
-Interactive docs: **http://localhost:8000/docs**
+Interactive docs: **http://localhost:9000/docs**
 
 ## Folder Structure
 
@@ -276,7 +276,7 @@ Agent execution logs are persisted in the `agent_logs` table with rolling retent
 Example:
 
 ```bash
-curl "http://localhost:8000/api/agents/logs?agent_name=data-ingestion-agent&status=failed&q=timeout&export=json"
+curl "http://localhost:9000/api/agents/logs?agent_name=data-ingestion-agent&status=failed&q=timeout&export=json"
 ```
 
 ## Ingestion Audit Review API
@@ -426,7 +426,7 @@ The default setup now uses PostgreSQL via Docker. To use PostgreSQL without Dock
 ```bash
 # Set PostgreSQL connection string
 set DATABASE_URL=postgresql://user:password@localhost:5432/ahimp
-uvicorn main:app --reload --port 8000
+uvicorn main:app --reload --port 9000
 ```
 
 ## Docker Operations
@@ -472,7 +472,7 @@ To use SQLite instead of PostgreSQL:
 
 ```bash
 export DATABASE_URL=sqlite:///ahimp.db
-uvicorn main:app --reload --port 8000
+uvicorn main:app --reload --port 9000
 ```
 
 **Note**: SQLite is not recommended for production or large datasets (>500K records). Use PostgreSQL + Docker for best performance.
